@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "dashgen/spec/v1",
+  "title": "Dashgen spec v1 — контракт между ИИ и сборщиком",
+  "type": "object",
+  "required": ["version", "appName", "source", "sheets"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "appName": { "type": "string", "minLength": 3, "maxLength": 100, "description": "Имя приложения в Qlik; повторная сборка заменяет приложение с тем же именем" },
+    "description": { "type": "string", "description": "Человекочитаемое описание отчёта" },
+    "source": {
+      "oneOf": [
+        { "$ref": "#/definitions/inlineSource" },
+        { "$ref": "#/definitions/excelSource" },
+        { "$ref": "#/definitions/qvdSource" }
+      ]
+    },
+    "measures": { "type": "array", "items": { "$ref": "#/definitions/measure" } },
+    "dimensions": { "type": "array", "items": { "$ref": "#/definitions/dimension" } },
+    "sheets": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/sheet" } }
+  },
+  "definitions": {
+    "inlineSource": {
+      "type": "object",
+      "required": ["type", "table", "fields", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "inline" },
+        "table": { "type": "string", "description": "Имя таблицы в модели" },
+        "fields": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "rows": { "type": "array", "items": { "type": "array" } }
+      }
+    },
+    "excelSource": {
+      "type": "object",
+      "required": ["type", "path", "sheet"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "excel" },
+        "path": { "type": "string", "pattern": "^lib://", "description": "Data connection, например lib://SRC/orders.xlsx" },
+        "sheet": { "type": "string" },
+        "fields": { "type": "array", "items": { "type": "string" }, "description": "Необязательно; по умолчанию все колонки" }
+      }
+    },
+    "qvdSource": {
+      "type": "object",
+      "required": ["type", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "qvd" },
+        "path": { "type": "string", "pattern": "^lib://" },
+        "fields": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "measure": {
+      "type": "object",
+      "required": ["id", "title", "formula"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "formula": { "type": "string", "minLength": 1, "description": "Выражение Qlik, например Sum(Amount); проверяется движком при сборке" },
+        "format": { "type": "string", "description": "Формат числа, например # ##0" }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["id", "title", "field"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sheet": {
+      "type": "object",
+      "required": ["title", "objects"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "objects": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/object" } }
+      }
+    },
+    "object": {
+      "type": "object",
+      "required": ["type", "col", "row"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["kpi", "linechart", "barchart", "table", "listbox"] },
+        "title": { "type": "string" },
+        "measure": { "type": "string", "description": "id меры (для kpi)" },
+        "dimension": { "type": "string", "description": "id измерения (для linechart, barchart)" },
+        "field": { "type": "string", "description": "поле (для listbox)" },
+        "dimensions": { "type": "array", "items": { "type": "string" }, "description": "id измерений (для table)" },
+        "measures": { "type": "array", "items": { "type": "string" }, "description": "id мер (для linechart, barchart, table)" },
+        "col": { "type": "integer", "minimum": 0, "maximum": 23 },
+        "row": { "type": "integer", "minimum": 0, "maximum": 11 },
+        "colspan": { "type": "integer", "minimum": 1, "maximum": 24 },
+        "rowspan": { "type": "integer", "minimum": 1, "maximum": 12 }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "kpi" } } }, "then": { "required": ["measure"] } },
+        { "if": { "properties": { "type": { "enum": ["linechart", "barchart"] } } }, "then": { "required": ["dimension", "measures"] } },
+        { "if": { "properties": { "type": { "const": "table" } } }, "then": { "required": ["dimensions", "measures"] } },
+        { "if": { "properties": { "type": { "const": "listbox" } } }, "then": { "required": ["field"] } }
+      ]
+    }
+  }
+}

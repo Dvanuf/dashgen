@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "appName": "TEST_Dashgen_v1",
+  "description": "Демо-сборка из spec.json: повторяет тестовый дашборд прототипа на inline-данных",
+  "source": {
+    "type": "inline",
+    "table": "Sales",
+    "fields": ["Year", "Month", "Region", "Product", "OrderID", "Amount", "Qty"],
+    "rows": [
+      [2026, 1, "Центр", "Ноутбуки", 1001, 124000, 2],
+      [2026, 2, "Центр", "Мониторы", 1002, 68000, 4],
+      [2026, 3, "Север", "Ноутбуки", 1003, 210000, 3],
+      [2026, 4, "Север", "Принтеры", 1004, 45000, 5],
+      [2026, 5, "Юг", "Мониторы", 1005, 96000, 6],
+      [2026, 6, "Юг", "Ноутбуки", 1006, 178000, 2],
+      [2026, 7, "Урал", "Принтеры", 1007, 54000, 6],
+      [2026, 8, "Урал", "Ноутбуки", 1008, 232000, 4],
+      [2026, 9, "Центр", "Принтеры", 1009, 38000, 4],
+      [2026, 10, "Север", "Мониторы", 1010, 88000, 5],
+      [2026, 11, "Юг", "Ноутбуки", 1011, 156000, 3],
+      [2026, 12, "Урал", "Мониторы", 1012, 74000, 4]
+    ]
+  },
+  "measures": [
+    { "id": "revenue", "title": "Выручка", "formula": "Sum(Amount)", "format": "# ##0" },
+    { "id": "orders", "title": "Заказы", "formula": "Count(DISTINCT OrderID)", "format": "# ##0" },
+    { "id": "avg", "title": "Средний чек", "formula": "Sum(Amount) / Count(DISTINCT OrderID)", "format": "# ##0" },
+    { "id": "qty", "title": "Количество, шт.", "formula": "Sum(Qty)", "format": "# ##0" }
+  ],
+  "dimensions": [
+    { "id": "region", "title": "Регион", "field": "Region" },
+    { "id": "product", "title": "Товар", "field": "Product" },
+    { "id": "month", "title": "Месяц", "field": "Month" }
+  ],
+  "sheets": [
+    {
+      "title": "Обзор",
+      "description": "Тестовый дашборд из spec.json (Dashgen v1)",
+      "objects": [
+        { "type": "listbox", "field": "Region", "title": "Регион", "col": 0, "row": 0 },
+        { "type": "listbox", "field": "Product", "title": "Товар", "col": 0, "row": 4 },
+        { "type": "listbox", "field": "Month", "title": "Месяц", "col": 0, "row": 8 },
+        { "type": "kpi", "measure": "revenue", "title": "Выручка", "col": 4, "row": 0 },
+        { "type": "kpi", "measure": "orders", "title": "Заказы", "col": 9, "row": 0 },
+        { "type": "kpi", "measure": "avg", "title": "Средний чек", "col": 14, "row": 0 },
+        { "type": "kpi", "measure": "qty", "title": "Количество", "col": 19, "row": 0 },
+        { "type": "linechart", "dimension": "month", "measures": ["revenue"], "title": "Выручка по месяцам", "col": 4, "row": 3 },
+        { "type": "barchart", "dimension": "region", "measures": ["revenue"], "title": "Выручка по регионам", "col": 14, "row": 3 },
+        { "type": "table", "dimensions": ["product", "region"], "measures": ["revenue", "orders", "avg"], "title": "Детализация: товар и регион", "col": 4, "row": 7 }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "host": "qlik-server.example.local",
+  "port": 4747,
+  "certDir": "~/qlik_build/certs",
+  "userDirectory": "DOMAIN",
+  "userId": "svc_dashgen",
+  "rejectUnauthorized": false,
+  "privacy": {
+    "bannedColumns": ["ФИО", "ИНН", "Телефон", "Паспорт", "Email", "Контрагент"],
+    "bannedPatterns": ["инн", "телефон", "фио", "паспорт", "e-?mail", "контрагент"]
+  }
+}

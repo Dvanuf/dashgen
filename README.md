@@ -17,8 +17,37 @@
 
 **Статус**
 
-- Работает прототип сборки: `build_dashboard_v2.js` (Node.js + enigma.js) создаёт приложение TEST_Dashboard_Inline в Qlik Sense.
-- Этап разработки: 1 из 9 (ядро сборки).
+- Этап 1 выполнен: сборка приложения из spec.json работает. `node cli.js build examples/spec-sales-inline.json --verify` создаёт приложение TEST_Dashgen_v1 в Qlik Sense (10 объектов, verify без ошибок).
+- Проверена связность: Engine 4747 и QRS 4242 отвечают.
+- Этап разработки: 2 из 9 (чтение и профиль).
+
+**Структура**
+
+```
+spec/schema.v1.json   — контракт: JSON-схема spec v1 (блок sources: inline | excel | qvd)
+src/
+  config.js           — загрузка конфигурации (пути кроссплатформенные: Mac и Windows)
+  engine.js           — подключение к Engine API (enigma.js, сертификаты, X-Qlik-User)
+  spec-validator.js   — валидация spec по схеме + ссылки на меры/измерения
+  sources/            — слой адаптеров: excel.js (профиль), qvd.js (заголовок XML); SourceProfile
+  privacy.js          — граница контура: безопасный профиль, запрещённые колонки, журнал
+  qvs-generator.js    — скрипт загрузки: inline | lib:// Excel | QVD
+  builder/            — templates.js (свойства клиента 1.39.8), objects.js, index.js (сборка)
+  verify.js           — ошибки объектов, сверка числа строк с источником
+cli.js                — команды: check | profile | build [--verify]
+prototype/            — проверенный прототип build_dashboard_v2.js и выгрузка шаблона клиента
+examples/             — демо-spec, повторяющий тестовый дашборд прототипа
+```
+
+**Команды**
+
+```
+node cli.js check examples/spec-sales-inline.json    # валидация spec
+node cli.js profile data.xlsx [--sheet Лист1]        # профиль Excel/QVD + dry run для ИИ
+node cli.js build spec.json --verify                 # сборка в Qlik + проверка
+```
+
+Настройки окружения — в `config.json` (не коммитится; шаблон: `config.example.json`). Поддержка `~` в путях делает конфиг одинаковым для macOS и Windows.
 
 **Безопасность**
 
