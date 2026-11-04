@@ -4,26 +4,27 @@ const { generateScript } = require('../qvs-generator');
 const objects = require('./objects');
 const T = require('./templates');
 
-// build(spec, cfg) → { appId, appName, objects: [{id, type, title}], sheets: n }
-async function build(spec, cfg) {
+// build(spec, cfg, log) → { appId, appName, objects: [{id, type, title}], sheets: n }
+// log — куда пишется журнал сборки (консоль CLI или интерфейс)
+async function build(spec, cfg, log = console.log) {
   return withSession(cfg, async global => {
     const removed = await deleteAppsByName(global, spec.appName);
-    if (removed.length) console.log('Удалено старых приложений с тем же именем:', removed.length);
+    if (removed.length) log('Удалено старых приложений с тем же именем: ' + removed.length);
 
     const created = await global.createApp(spec.appName);
     const app = await global.openDoc(created.qAppId);
-    console.log('Приложение создано:', created.qAppId);
+    log('Приложение создано: ' + created.qAppId);
 
     await app.setScript(generateScript(spec));
     if (!(await app.doReload(0, false, false))) {
       throw new Error('Загрузка данных не прошла — проверьте скрипт и источник');
     }
-    console.log('Данные загружены');
+    log('Данные загружены');
 
     const dimMap = {}, meaMap = {};
     for (const d of spec.dimensions || []) dimMap[d.id] = await objects.createMasterDimension(app, d);
     for (const m of spec.measures || []) meaMap[m.id] = await objects.createMasterMeasure(app, m);
-    console.log('Мастер-элементы: измерений ' + Object.keys(dimMap).length + ', мер ' + Object.keys(meaMap).length);
+    log('Мастер-элементы: измерений ' + Object.keys(dimMap).length + ', мер ' + Object.keys(meaMap).length);
 
     const createdObjects = [];
     for (let si = 0; si < spec.sheets.length; si++) {
@@ -43,11 +44,11 @@ async function build(spec, cfg) {
         cells,
         qChildListDef: { qData: { title: '/qMetaDef/title' } }
       });
-      console.log('Лист «' + sheet.title + '»: объектов ' + cells.length);
+      log('Лист «' + sheet.title + '»: объектов ' + cells.length);
     }
 
     await app.doSave();
-    console.log('Готово. Приложение «' + spec.appName + '» (ID ' + created.qAppId + ') в Hub → Work.');
+    log('Готово. Приложение «' + spec.appName + '» (ID ' + created.qAppId + ') в Hub → Work.');
     return { appId: created.qAppId, appName: spec.appName, objects: createdObjects, sheets: spec.sheets.length };
   });
 }

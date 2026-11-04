@@ -39,21 +39,21 @@ async function verify(cfg, appId, spec, buildResult) {
   });
 }
 
-// printReport(report) — человекочитаемый вывод в консоль
-function printReport(report) {
-  console.log('--- Проверка (verify) ---');
-  console.log('Объектов проверено:', report.objectsChecked);
+// printReport(report, log) — человекочитаемый вывод (консоль CLI или интерфейс)
+function printReport(report, log = console.log) {
+  log('--- Проверка (verify) ---');
+  log('Объектов проверено: ' + report.objectsChecked);
   for (const h of report.hyperCubes) {
-    console.log(`  ${h.type} «${h.title}»: ${h.rows} строк x ${h.cols} колонок`);
+    log(`  ${h.type} «${h.title}»: ${h.rows} строк x ${h.cols} колонок`);
   }
   if (report.objectErrors.length) {
-    console.log('ОШИБКИ ОБЪЕКТОВ:', report.objectErrors.length);
-    for (const e of report.objectErrors) console.log('  -', e.type, '«' + e.title + '»:', e.error);
+    log('ОШИБКИ ОБЪЕКТОВ: ' + report.objectErrors.length);
+    for (const e of report.objectErrors) log('  - ' + e.type + ' «' + e.title + '»: ' + e.error);
   } else {
-    console.log('Ошибок объектов нет');
+    log('Ошибок объектов нет');
   }
   if (report.expectedRows !== undefined) {
-    console.log(`Строк в модели: ${report.modelRows} (ожидалось ${report.expectedRows}) — ` + (report.rowsMatch ? 'совпадает' : 'РАСХОЖДЕНИЕ'));
+    log(`Строк в модели: ${report.modelRows} (ожидалось ${report.expectedRows}) — ` + (report.rowsMatch ? 'совпадает' : 'РАСХОЖДЕНИЕ'));
   }
 }
 

@@ -6,7 +6,8 @@
   "main": "cli.js",
   "scripts": {
     "build": "node cli.js build examples/spec-sales-inline.json",
-    "check": "node cli.js check examples/spec-sales-inline.json"
+    "check": "node cli.js check examples/spec-sales-inline.json",
+    "ui": "node server.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

@@ -1,0 +1,79 @@
+/* Dashgen UI — светлая тема, дизайн-язык макета */
+* { box-sizing: border-box; }
+:root {
+  --bg: #eef1f6; --panel: #ffffff; --panel2: #f5f7fb; --line: #dce2ec;
+  --ink: #17202e; --mut: #66718a; --acc: #2e6da8; --accsoft: #e7f0f9;
+  --ok: #1f8f5f; --oksoft: #e5f5ee; --warn: #a06a10; --warnsoft: #fbf2df;
+  --bad: #c04343; --mono: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+}
+body { margin: 0; background: var(--bg); font: 13.5px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+#app { max-width: 1060px; margin: 24px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+
+.topbar { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.logo { width: 18px; height: 18px; border-radius: 5px; background: var(--acc); }
+.file, .user { color: var(--mut); font-size: 12.5px; }
+.push { margin-left: auto; }
+.chipstat { font-size: 11.5px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--mut); }
+.chipstat.ok { color: var(--ok); background: var(--oksoft); border-color: transparent; }
+.chipstat.bad { color: var(--bad); background: #fbeaea; border-color: transparent; }
+
+.pipe { display: flex; align-items: center; gap: 6px; padding: 7px 14px; background: var(--panel2); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pstep { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--mut); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.pstep.done { color: var(--ink); } .pstep.done .dot { background: var(--ok); }
+.gate { font-size: 10.5px; color: var(--mut); padding: 0 6px; }
+.gate::before, .gate::after { content: ""; display: inline-block; width: 14px; border-top: 1px dashed var(--mut); vertical-align: middle; margin: 0 4px; }
+
+.body { display: flex; min-height: 480px; }
+.nav { width: 210px; flex: none; background: var(--panel2); border-right: 1px solid var(--line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.navbtn { text-align: left; padding: 8px 10px; border-radius: 8px; border: none; background: none; font: inherit; font-size: 12.8px; color: var(--mut); cursor: pointer; }
+.navbtn:hover { background: rgba(23,32,46,.05); }
+.navbtn.is-on { background: var(--accsoft); color: var(--acc); font-weight: 500; }
+.navbtn-cfg { margin-top: auto; }
+.navfoot { padding: 10px; border-top: 1px solid var(--line); font-size: 10.8px; color: var(--mut); line-height: 1.5; }
+
+.main { flex: 1; padding: 18px 22px 22px; min-width: 0; }
+h2 { font-size: 15.5px; margin: 0 0 3px; }
+.sub { font-size: 12px; color: var(--mut); margin: 0 0 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; margin-bottom: 12px; }
+.card.note { color: var(--mut); }
+.lbl { display: block; font-size: 11.5px; color: var(--mut); margin-bottom: 5px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.input { border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; font: inherit; font-size: 12.5px; min-width: 260px; background: var(--panel); color: var(--ink); }
+.input-s { min-width: 160px; }
+.btn { border: 1px solid var(--line); border-radius: 8px; padding: 6px 13px; font: inherit; font-size: 12.5px; background: var(--panel); cursor: pointer; }
+.btn:hover { background: var(--panel2); }
+.btn-p { background: var(--acc); border-color: var(--acc); color: #fff; }
+.btn-p:hover { background: #275f92; }
+.btn[disabled] { opacity: .45; cursor: default; }
+.btn[disabled]:hover { background: var(--acc); }
+.chips { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip { border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--mut); background: var(--panel); cursor: pointer; }
+.chip.is-on { border-color: var(--acc); color: var(--acc); background: var(--accsoft); font-weight: 500; }
+.note { font-size: 11.6px; color: var(--mut); }
+.badge { display: inline-block; font-size: 11.5px; border-radius: 99px; padding: 3px 11px; }
+.badge-ok { color: var(--ok); background: var(--oksoft); }
+.badge-warn { color: var(--warn); background: var(--warnsoft); }
+.hidden { display: none !important; }
+
+table.t { width: 100%; border-collapse: collapse; font-size: 12.3px; }
+table.t th { text-align: left; font-weight: 500; color: var(--mut); font-size: 11.3px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+table.t td { padding: 5px 8px; border-bottom: 1px solid rgba(220,226,236,.55); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.banned td { color: var(--mut); }
+
+.code { font-family: var(--mono); font-size: 11.4px; line-height: 1.55; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; overflow-x: auto; white-space: pre; max-height: 420px; overflow-y: auto; }
+.code.ok { border-color: var(--ok); }
+.code.err { border-color: var(--bad); }
+
+.foot { padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel2); font-size: 11px; color: var(--mut); }
+
+/* макет листа: сетка 24x12 как в Qlik */
+.grid { position: relative; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; height: 420px; overflow: hidden; }
+.grid .gcell { position: absolute; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 6px 8px; overflow: hidden; }
+.grid .gcell .t { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grid .gcell .k { font-size: 9.5px; color: var(--mut); text-transform: uppercase; letter-spacing: .04em; }
+.grid .gcell.kpi { background: var(--accsoft); }
+.grid .gcell.chart { background: var(--panel); }
+.grid .gcell .placeholder { height: calc(100% - 30px); margin-top: 4px; border-radius: 4px; background: repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(46,109,168,.07) 6px, rgba(46,109,168,.07) 12px); }
