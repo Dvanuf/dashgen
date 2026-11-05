@@ -1,6 +1,7 @@
 /* Dashgen UI — дизайн-система из исходного макета: тема light-dark, карточки, иконки Lucide */
 * { box-sizing: border-box; }
 :root { color-scheme: light dark; }
+html, body { height: 100%; }
 #dg-app {
   --dg-bg: light-dark(#eef1f6, #0f141c);
   --dg-panel: light-dark(#ffffff, #171e29);
@@ -21,12 +22,14 @@
   font-size: 13.5px; line-height: 1.45; color: var(--dg-ink);
   background: var(--dg-panel);
   border: 1px solid var(--dg-line); border-radius: 14px;
-  max-width: 1080px; margin: 24px auto;
+  width: calc(100% - 24px); margin: 12px auto;
+  min-height: calc(100vh - 24px);
   overflow: hidden; display: flex; flex-direction: column; text-align: left;
 }
+#dg-app .dg-body { flex: 1; }
 #dg-app * { box-sizing: border-box; }
 #dg-app button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
-body { margin: 0; background: var(--dg-bg, #eef1f6); }
+body { margin: 0; background: var(--dg-bg, #eef1f6); display: flex; justify-content: center; }
 #dg-app svg[data-lucide], .dg-chipstat svg { width: 14px; height: 14px; flex: none; }
 
 /* верхняя панель */

@@ -35,10 +35,14 @@
       "spec/**",
       "examples/**",
       "desktop/**",
+      "config.json",
       "package.json"
     ],
     "mac": {
-      "target": "dir",
+      "target": [
+        "dir",
+        "dmg"
+      ],
       "icon": "desktop/build/icon.png",
       "category": "public.app-category.business",
       "identity": null
