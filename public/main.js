@@ -1,0 +1,1175 @@
+// Dashgen UI — логика конвейера: профиль → приватность → spec → макет → сборка → публикация.
+// Долгие операции читают SSE-поток сервера: лог появляется построчно, есть таймер прогресса.
+'use strict';
+
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icons = () => { if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } }); };
+
+const state = {
+  config: null, spec: null, specName: null, specHash: null,
+  approvals: [], streams: [], specChecked: false, built: false, published: false, verifyOk: false
+};
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// Долгая операция с живым логом: сервер отвечает SSE {log|done|error}
+async function apiStream(path, bodyObj, logEl) {
+  const res = await fetch(path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyObj)
+  });
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok && !ct.includes('event-stream')) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || res.statusText);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', done = null, error = null;
+  while (true) {
+    const { value, done: fin } = await reader.read();
+    if (fin) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (!chunk.startsWith('data:')) continue;
+      let ev; try { ev = JSON.parse(chunk.slice(5)); } catch (_) { continue; }
+      if (ev.type === 'log') { logEl.textContent += (logEl.textContent ? '\n' : '') + ev.text; logEl.scrollTop = logEl.scrollHeight; }
+      else if (ev.type === 'done') done = ev;
+      else if (ev.type === 'error') error = new Error(ev.message);
+    }
+  }
+  if (error) throw error;
+  if (!done) throw new Error('Операция прервана без результата');
+  return done;
+}
+
+// Прогресс: спиннер + фаза + секундомер (видно, что идёт работа, а не зависло)
+let progressTimer = null;
+function progressStart(logEl, phaseText) {
+  progressStop();
+  const bar = document.createElement('div');
+  bar.className = 'dg-progress';
+  bar.innerHTML = '<span class="dg-spin" aria-hidden="true"></span><span class="dg-phase">' + esc(phaseText) + '</span><span class="dg-secs">0 с</span>';
+  logEl.classList.remove('dg-hidden', 'is-err');
+  logEl.textContent = '';
+  logEl.parentNode.insertBefore(bar, logEl);
+  const t0 = Date.now();
+  const secs = bar.querySelector('.dg-secs');
+  progressTimer = { bar, interval: setInterval(() => { secs.textContent = Math.round((Date.now() - t0) / 1000) + ' с'; }, 500) };
+}
+function progressPhase(text) {
+  if (progressTimer) progressTimer.bar.querySelector('.dg-phase').textContent = text;
+}
+function progressStop(ok) {
+  if (!progressTimer) return;
+  clearInterval(progressTimer.interval);
+  progressTimer.bar.remove();
+  progressTimer = null;
+}
+
+// ── навигация и статусы ──
+const navBtns = document.querySelectorAll('.dg-navbtn');
+navBtns.forEach(btn => btn.addEventListener('click', () => {
+  navBtns.forEach(b => b.classList.toggle('is-on', b === btn));
+  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-' + btn.dataset.step; });
+}));
+
+function pipeDone(names) {
+  document.querySelectorAll('.dg-pipestep').forEach(el => el.classList.toggle('is-done', names.includes(el.dataset.pipe)));
+}
+
+function setStatus(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text || '';
+}
+
+// ── маршруты этапов: подсветка выполненных пунктов ──
+function refreshGuides() {
+  const marks = {
+    'dg-guide-source': [!!state.safeProfile],
+    'dg-guide-spec': [!!state.spec, !!state.specChecked],
+    'dg-guide-layout': [!!state.spec, !!state.built],
+    'dg-guide-build': [!!state.built, !!(state.built && state.verifyOk)],
+    'dg-guide-publish': [!!state.built, currentSpecApproved(), !!state.published]
+  };
+  Object.entries(marks).forEach(([id, flags]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    [...el.children].forEach((li, i) => li.classList.toggle('is-done', !!flags[i]));
+  });
+}
+
+// ── конфиг и подключения ──
+async function loadConfig() {
+  try {
+    const cfg = await api('/api/config');
+    state.config = cfg;
+    $('#dg-srv-chip').innerHTML = '<i data-lucide="server" aria-hidden="true"></i> ' + esc(cfg.host);
+    $('#dg-cfg-chip').textContent = 'config загружен';
+    $('#dg-cfg-chip').className = 'dg-chipstat is-ok';
+    $('#dg-user-chip').textContent = cfg.userDirectory + '\\' + cfg.userId;
+    const nf = document.querySelector('.dg-navfoot');
+    if (nf) nf.innerHTML = nf.innerHTML.replace(/Dashgen [\d.]+/, 'Dashgen v' + (cfg.version || '?'));
+    $('#dg-conn-host').textContent = cfg.host;
+    $('#dg-conn-ports').textContent = 'Engine ' + cfg.portEngine + ' · QRS ' + cfg.portQrs + ' · сертификаты ' + cfg.certDir;
+    $('#dg-conn-table').innerHTML = [
+      ['Host', cfg.host], ['Engine API', 'порт ' + cfg.portEngine + ' · enigma.js · схема 12.612.0'],
+      ['QRS API', 'порт ' + cfg.portQrs + ' · публикация, стримы'], ['Сертификаты', cfg.certDir],
+      ['Учётная запись', cfg.userDirectory + '\\' + cfg.userId],
+      ['ИИ-провайдер', cfg.ai ? cfg.ai.model + ' · ' + cfg.ai.baseUrl : 'не задан (блок ai в config.json)']
+    ].map(r => '<tr><td style="color:var(--dg-mut);width:40%;">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('');
+    setStatus('dg-st-conn', '✓');
+  } catch (e) {
+    $('#dg-cfg-chip').textContent = 'config.json не найден';
+    $('#dg-cfg-chip').className = 'dg-chipstat is-bad';
+  }
+  icons();
+}
+
+$('#dg-btn-test-conn').addEventListener('click', async () => {
+  const note = $('#dg-conn-test-note');
+  note.textContent = 'Проверка Engine 4747 и QRS 4242…';
+  try {
+    const r = await api('/api/test-connection', { method: 'POST' });
+    note.textContent = 'Engine: ' + (r.engine ? 'succeeded ✓' : 'недоступен ✗') + ' · QRS: ' + (r.qrs ? 'отвечает ✓' : 'недоступен ✗');
+  } catch (e) { note.textContent = 'Ошибка: ' + e.message; }
+});
+
+// ── источник ──
+document.querySelectorAll('.dg-chip[data-src]').forEach(chip => chip.addEventListener('click', () => {
+  document.querySelectorAll('.dg-chip[data-src]').forEach(c => c.classList.toggle('is-on', c === chip));
+  $('#dg-src-share').classList.toggle('dg-hidden', chip.dataset.src !== 'share');
+  $('#dg-src-path').classList.toggle('dg-hidden', chip.dataset.src !== 'path');
+  $('#dg-src-upload').classList.toggle('dg-hidden', chip.dataset.src !== 'upload');
+}));
+
+function renderProfile(data) {
+  state.sourceProfile = data.sourceProfile;
+  state.safeProfile = data.safeProfile;
+  const sp = data.sourceProfile;
+  const banned = new Set((data.safeProfile.excludedColumns || []).map(x => x.table + '::' + x.column));
+  let html = '';
+  for (const t of sp.tables) {
+    html += '<div class="dg-card"><p class="dg-cardtitle"><i data-lucide="table" aria-hidden="true"></i>' + esc(t.name) +
+      ' <span class="dg-note" style="font-weight:400;">· ' + t.rowCount + ' строк · ' + sp.sourceType + '</span></p>' +
+      '<table class="dg-table"><thead><tr><th>Колонка</th><th>Тип</th><th class="num">Уник.</th><th class="num">Проп.</th><th>Профиль для ИИ</th></tr></thead><tbody>';
+    for (const c of t.columns) {
+      const isBanned = banned.has(t.name + '::' + c.name);
+      html += '<tr' + (isBanned ? ' class="is-block"' : '') + '><td>' + esc(c.name) + '</td><td>' + esc(c.type) +
+        '</td><td class="num">' + (c.distinct ?? '—') + '</td><td class="num">' + (c.nulls ?? '—') + '</td><td>' +
+        (isBanned ? '🔒 запрещённая колонка' : 'в профиле') + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  html += '<div class="dg-rowbtn"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>профиль построен локально</span>' +
+    '<span class="dg-note">В ИИ уйдёт только схема — см. шаг «Приватность».</span></div>';
+  $('#dg-profile-out').innerHTML = html;
+  renderPrivacy(data.safeProfile);
+  setStatus('dg-st-source', '✓'); setStatus('dg-st-privacy', '✓');
+  pipeDone(['source', 'profile', 'privacy']);
+  refreshGuides();
+  icons();
+}
+
+function renderPrivacy(safe) {
+  $('#dg-privacy-out').innerHTML = '<pre class="dg-code">' + esc(JSON.stringify(safe, null, 2)) + '</pre>';
+  $('#dg-privacy-actions').style.display = 'flex';
+  const excl = (safe.excludedColumns || []);
+  $('#dg-priv-excluded').innerHTML = excl.length
+    ? '<p class="dg-note" style="margin:8px 0 4px;">Исключено из профиля:</p><div class="dg-chips">' +
+      excl.map(x => '<span class="dg-chip">🔒 ' + esc(x.column) + '</span>').join('') + '</div>'
+    : '';
+}
+
+$('#dg-btn-profile-path').addEventListener('click', async () => {
+  const p = $('#dg-src-path-in').value.trim();
+  if (!p) return;
+  const body = { path: p };
+  const sheet = $('#dg-src-sheet-in').value.trim();
+  if (sheet) body.sheet = sheet;
+  $('#dg-profile-out').innerHTML = '<div class="card dg-note">Профилирую…</div>';
+  try { renderProfile(await api('/api/profile-path', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })); }
+  catch (e) { $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>'; }
+});
+
+$('#dg-btn-profile-upload').addEventListener('click', async () => {
+  const f = $('#dg-src-file').files[0];
+  if (!f) return;
+  $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Загружаю и профилирую…</div>';
+  try { renderProfile(await api('/api/profile?name=' + encodeURIComponent(f.name), { method: 'POST', body: f })); }
+  catch (e) { $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>'; }
+});
+
+// ── спецификация ──
+async function loadSpecList() {
+  const { specs } = await api('/api/specs');
+  $('#dg-spec-select').innerHTML = specs.map(s =>
+    '<option value="' + esc(s.name) + '">' + esc(s.appName) + ' · ' + esc(s.hash) + '</option>').join('');
+  if (specs.length) await loadSpec(specs[0].name);
+}
+
+async function loadSpec(name) {
+  const data = await api('/api/spec?name=' + encodeURIComponent(name));
+  state.spec = data.spec;
+  state.specName = data.name;
+  state.specHash = data.hash;
+  state.specChecked = false;
+  state.built = false;
+  state.published = false;
+  $('#dg-spec-view').textContent = JSON.stringify(data.spec, null, 2);
+  $('#dg-top-spec').textContent = data.spec.appName;
+  $('#dg-build-spec-name').textContent = data.spec.appName;
+  $('#dg-spec-hash').textContent = data.hash.slice(0, 8);
+  $('#dg-publish-hash').textContent = data.hash.slice(0, 8);
+  $('#dg-spec-check-out').innerHTML = '';
+  $('#dg-spec-badge').classList.add('dg-hidden');
+  setStatus('dg-st-spec', '');
+  renderEditor(data.spec);
+  refreshGuides();
+  icons();
+}
+
+$('#dg-btn-spec-load').addEventListener('click', () => loadSpec($('#dg-spec-select').value));
+$('#dg-spec-select').addEventListener('change', () => loadSpec($('#dg-spec-select').value));
+
+$('#dg-btn-spec-check').addEventListener('click', async () => {
+  if (!state.spec) return;
+  try {
+    const r = await api('/api/check', { method: 'POST', body: JSON.stringify(state.spec), headers: { 'Content-Type': 'application/json' } });
+    if (r.ok) {
+      state.specChecked = true;
+      $('#dg-spec-check-out').innerHTML = '<div class="dg-rowbtn" style="margin-top:10px;"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>схема v1, ссылки и сетка — корректны</span></div>';
+      $('#dg-spec-badge').classList.remove('dg-hidden');
+      setStatus('dg-st-spec', '✓');
+    } else {
+      state.specChecked = false;
+      $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(r.errors.join('\n')) + '</pre>';
+    }
+  } catch (e) { $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(e.message) + '</pre>'; }
+  refreshGuides();
+  icons();
+});
+
+// ── проект ИИ: ключ провайдера ──
+async function loadKeyStatus() {
+  try {
+    const st = await api('/api/key-status');
+    $('#dg-key-row').classList.toggle('dg-hidden', st.present);
+    $('#dg-key-badge').classList.toggle('dg-hidden', !st.present);
+    $('#dg-btn-rekey').classList.toggle('dg-hidden', !st.present);
+  } catch (e) { /* поле остаётся видимым */ }
+}
+
+$('#dg-btn-rekey').addEventListener('click', () => {
+  $('#dg-key-row').classList.remove('dg-hidden');
+  $('#dg-key-input').focus();
+});
+
+$('#dg-btn-save-key').addEventListener('click', async () => {
+  const key = $('#dg-key-input').value.trim();
+  if (!key) return;
+  try {
+    await api('/api/set-api-key', { method: 'POST', body: JSON.stringify({ key }), headers: { 'Content-Type': 'application/json' } });
+    $('#dg-key-input').value = '';
+    await loadKeyStatus();
+    const logEl = $('#dg-ai-log');
+    logEl.classList.remove('dg-hidden', 'is-err');
+    logEl.textContent = 'Ключ сохранён в ~/.dashgen/zai_api_key (chmod 600). Можно генерировать.';
+  } catch (e) {
+    const logEl = $('#dg-ai-log');
+    logEl.classList.remove('dg-hidden');
+    logEl.classList.add('is-err');
+    logEl.textContent = 'Ошибка сохранения ключа: ' + e.message;
+  }
+});
+
+// ── проект ИИ: платформа и модель ──
+async function loadAiPresets() {
+  const r = await api('/api/ai-presets');
+  const sel = $('#dg-ai-endpoint');
+  sel.innerHTML = r.presets.map(p => '<option value="' + esc(p.baseUrl) + '">' + esc(p.label) + '</option>').join('');
+  const cur = r.current && r.current.baseUrl;
+  if (cur && !r.presets.some(p => p.baseUrl === cur)) {
+    sel.insertAdjacentHTML('beforeend', '<option value="' + esc(cur) + '">Свой URL</option>');
+  }
+  if (cur) sel.value = cur;
+  if (r.current && r.current.model) $('#dg-ai-model-in').value = r.current.model;
+}
+
+async function saveAiEndpoint() {
+  try {
+    await api('/api/set-ai-endpoint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: $('#dg-ai-endpoint').value, model: $('#dg-ai-model-in').value.trim() })
+    });
+    $('#dg-endpoint-saved').textContent = 'сохранено ✓';
+    setTimeout(() => { $('#dg-endpoint-saved').textContent = ''; }, 2500);
+  } catch (e) {
+    $('#dg-endpoint-saved').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+$('#dg-ai-endpoint').addEventListener('change', saveAiEndpoint);
+$('#dg-ai-model-in').addEventListener('change', saveAiEndpoint);
+
+// ── проект ИИ: генерация spec (SSE, живой прогресс) ──
+$('#dg-btn-ai-gen').addEventListener('click', async () => {
+  const btn = $('#dg-btn-ai-gen'), logEl = $('#dg-ai-log');
+  const desc = $('#dg-ai-desc').value.trim();
+  if (!desc) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Опишите отчёт — что показывать.'; return; }
+  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте источник на шаге «Источник».'; return; }
+  btn.disabled = true;
+  progressStart(logEl, 'Готовлю профиль и отправляю модели…');
+  try {
+    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc }, text => {
+      progressPhase('Модель работает…');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    });
+    progressStop(true);
+    state.spec = r.spec;
+    state.specName = null;
+    state.specHash = null;
+    state.specChecked = true;
+    state.built = false;
+    state.published = false;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName;
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (сгенерирован ИИ, не сохранён)';
+    $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
+    setStatus('dg-st-spec', '✓');
+    $('#dg-spec-check-out').innerHTML = '<span class="dg-note">Сгенерирован за ' + r.attempts + ' попыт. Перейдите на «Макет» или собирайте черновик.</span>';
+    renderEditor(r.spec);
+    pipeDone(['source', 'profile', 'privacy', 'spec']);
+  } catch (e) {
+    progressStop(false);
+    logEl.classList.add('is-err');
+    let msg = 'ОШИБКА: ' + e.message;
+    if (/HTTP 401/.test(e.message)) msg += '\nПодсказка: ключ отклонён — проверьте платформу и нажмите «Заменить ключ».';
+    logEl.textContent += '\n' + msg;
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
+});
+
+// ── макет: редактор раскладки (drag + resize, переезд соседей вниз — как в Sense) ──
+const DG_PALETTE = ['#2e6da8', '#5a9fd8', '#8fb8dc', '#e0a63e', '#c04343', '#1f8f5f', '#97a3b8', '#73593c'];
+const SHEET_COLS = 24, SHEET_ROWH = 58, SHEET_GAP = 8;
+const CHART_TYPES = ['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap', 'gauge'];
+const MIN_SIZE = { kpi: [3, 2], linechart: [6, 3], barchart: [6, 3], piechart: [5, 3], scatterplot: [6, 3], combochart: [6, 3], treemap: [6, 3], gauge: [4, 3], table: [8, 3], listbox: [3, 2], 'pivot-table': [8, 3] };
+const DEFAULT_SIZE = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], piechart: [8, 4], scatterplot: [10, 5], combochart: [10, 4], treemap: [10, 4], gauge: [5, 3], table: [16, 5], listbox: [3, 4], 'pivot-table': [12, 5] };
+
+function fieldFromFormula(f) {
+  const m = String(f || '').match(/^(sum|count|avg)\s*\(\s*(?:distinct\s+)?\[?([^\]\)]+?)\]?\s*\)/i);
+  return m ? { agg: m[1].toLowerCase(), distinct: /distinct/i.test(m[0]), field: (m[2] || '').trim() } : null;
+}
+
+function layoutGroups(spec) {
+  const dimsById = {};
+  for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
+  const groups = [];
+  for (const sheet of spec.sheets || []) {
+    for (const o of sheet.objects || []) {
+      if (!['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap'].includes(o.type)) continue;
+      const dimField = dimsById[o.dimension];
+      if (!dimField) continue;
+      const fm = fieldFromFormula((spec.measures || []).find(x => x.id === (o.measures || [])[0])?.formula) || { agg: 'count', distinct: false, field: null };
+      groups.push({ dim: dimField, measure: fm.field, agg: fm.agg, distinct: fm.distinct, ref: o });
+    }
+  }
+  return groups;
+}
+function layoutKpis(spec) {
+  return (spec.measures || []).filter(m => (spec.sheets || []).some(s => (s.objects || []).some(o => o.type === 'kpi' && o.measure === m.id)))
+    .map(m => ({ id: m.id, formula: m.formula }));
+}
+function layoutScatters(spec) {
+  const dimsById = {};
+  for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
+  const out = [];
+  for (const sheet of spec.sheets || []) {
+    for (const o of sheet.objects || []) {
+      if (o.type !== 'scatterplot' || !o.dimension) continue;
+      const fields = (o.measures || []).map(id => {
+        const fm = fieldFromFormula((spec.measures || []).find(x => x.id === id)?.formula);
+        return fm ? fm.field : null;
+      });
+      out.push({ key: (dimsById[o.dimension] || '') + '|' + fields.join('|'), xF: fields[0], yF: fields[1], sF: fields[2] || null });
+    }
+  }
+  return out;
+}
+
+async function previewDataFor(spec) {
+  const groups = layoutGroups(spec), kpis = layoutKpis(spec), scatters = layoutScatters(spec);
+  if (spec.source.type === 'inline') {
+    const { fields, rows } = spec.source;
+    const idx = f => fields.indexOf(f);
+    const isNum = v => typeof v === 'number';
+    const gOut = {};
+    for (const g of groups) {
+      const di = idx(g.dim);
+      if (di < 0) continue;
+      const mi = g.measure ? idx(g.measure) : -1;
+      const acc = {};
+      for (const r of rows || []) {
+        const label = String(r[di]);
+        if (g.agg === 'count') { if (r[di] !== null) acc[label] = (acc[label] || 0) + 1; continue; }
+        if (mi >= 0 && isNum(r[mi])) acc[label] = (acc[label] || 0) + r[mi];
+      }
+      const top = Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 12)
+        .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
+      gOut[g.dim + '|' + g.measure + '|' + g.agg] = { labels: top.map(t => t.label), values: top.map(t => t.value) };
+    }
+    const kpiValues = {};
+    for (const k of kpis) {
+      const fm = fieldFromFormula(k.formula);
+      if (!fm || idx(fm.field) < 0) { kpiValues[k.id] = null; continue; }
+      const vals = (rows || []).map(r => r[idx(fm.field)]).filter(isNum);
+      kpiValues[k.id] = fm.agg === 'count' ? (fm.distinct ? new Set((rows || []).map(r => String(r[idx(fm.field)]))).size : vals.length) : fm.agg === 'avg' ? (vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null) : vals.reduce((a, b) => a + b, 0);
+    }
+    const sOut = {};
+    for (const s of scatters) {
+      const xi = idx(s.xF), yi = idx(s.yF), zi = s.sF ? idx(s.sF) : -1;
+      if (xi < 0 || yi < 0) continue;
+      sOut[s.key] = (rows || []).filter(r => isNum(r[xi]) && isNum(r[yi])).slice(0, 400)
+        .map(r => ({ x: r[xi], y: r[yi], size: zi >= 0 ? r[zi] : null }));
+    }
+    return { groups: gOut, kpiValues, scatterPoints: sOut, sample: (rows || []).slice(0, 8).map(r => fields.map(f => r[fields.indexOf(f)])), fields, rowCount: (rows || []).length };
+  }
+  const r = await api('/api/preview-data', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      groups: groups.map(g => ({ dim: g.dim, measure: g.measure, agg: g.agg })),
+      kpis, scatters, sheet: spec.source.sheet, source: spec.source
+    })
+  });
+  return r;
+}
+
+function fmtCompact(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toLocaleString('ru', { maximumFractionDigits: 2 }) + ' млрд';
+  if (a >= 1e6) return (v / 1e6).toLocaleString('ru', { maximumFractionDigits: 1 }) + ' млн';
+  if (a >= 1e4) return (v / 1e3).toLocaleString('ru', { maximumFractionDigits: 1 }) + ' тыс';
+  return v.toLocaleString('ru', { maximumFractionDigits: 1 });
+}
+function fmtRu(v) { return v === null || v === undefined || isNaN(v) ? '—' : Math.round(v).toLocaleString('ru-RU'); }
+
+function specObjectCells(spec) {
+  const out = [];
+  (spec.sheets || []).forEach((sheet, si) => (sheet.objects || []).forEach((o, oi) => {
+    const [dc, dr] = DEFAULT_SIZE[o.type] || [4, 3];
+    out.push({ o, si, oi, cs: o.colspan || dc, rs: o.rowspan || dr });
+  }));
+  return out;
+}
+
+// Отрисовка содержимого плитки (диаграмма/таблица/KPI) — используется редактором
+function renderedChartSVG(o, spec, pd) {
+  const dimsById = {}; for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
+  const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
+  const dimField = dimsById[o.dimension];
+  const W = 300, H = 150, padL = 40, padB = 24, padT = 10;
+  const innerW = W - padL - 10, innerH = H - padB - padT;
+  const groupFor = mId => {
+    const fm = fieldFromFormula(measById[mId]?.formula) || { agg: 'count', field: null };
+    return (pd.groups || {})[dimField + '|' + fm.field + '|' + fm.agg] || { labels: [], values: [] };
+  };
+  if (o.type === 'kpi') {
+    const v = (pd.kpiValues || {})[o.measure];
+    return '<svg viewBox="0 0 300 150">' +
+      '<text x="150" y="86" text-anchor="middle" font-size="34" font-weight="600" fill="var(--dg-acc)">' + esc(fmtCompact(v)) + '</text>' +
+      '<text x="150" y="112" text-anchor="middle" font-size="12" fill="var(--dg-mut)">' + esc(measById[o.measure]?.title || '') + '</text></svg>';
+  }
+  if (o.type === 'gauge') {
+    const v = (pd.kpiValues || {})[o.measure];
+    const frac = Math.min(Math.max((v ?? 0) / (Math.max(v, 1) * 1.2), 0.02), 1);
+    const a0 = -Math.PI * 0.75;
+    const a1 = a0 + frac * Math.PI * 1.5;
+    const arc = (from, to, r) => `M${150 + r * Math.cos(from)},${86 + r * Math.sin(from)} A${r},${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${150 + r * Math.cos(to)},${86 + r * Math.sin(to)}`;
+    return '<svg viewBox="0 0 300 150">' +
+      `<path d="${arc(a0, a0 + Math.PI * 1.5, 78)}" fill="none" stroke="var(--dg-line)" stroke-width="16" stroke-linecap="round"></path>` +
+      `<path d="${arc(a0, a1, 78)}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="16" stroke-linecap="round"></path>` +
+      `<text x="150" y="92" text-anchor="middle" font-size="24" font-weight="600" fill="var(--dg-ink)">${esc(fmtCompact(v))}</text>` +
+      `<text x="150" y="114" text-anchor="middle" font-size="11" fill="var(--dg-mut)">${esc(measById[o.measure]?.title || '')}</text></svg>`;
+  }
+  if (o.type === 'scatterplot') {
+    const key = o.dimension + '|' + (o.measures || []).join('|');
+    const pts = (pd.scatterPoints || {})[key] || [];
+    if (!pts.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет числовых пар</text></svg>';
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y), ss = pts.map(p => p.size ?? 1);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const s0 = Math.min(...ss), s1 = Math.max(...ss);
+    const sx = v => padL + ((v - x0) / ((x1 - x0) || 1)) * innerW;
+    const sy = v => padT + innerH - ((v - y0) / ((y1 - y0) || 1)) * innerH;
+    let out = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + innerH}" stroke="var(--dg-line)"></line><line x1="${padL}" y1="${padT + innerH}" x2="${padL + innerW}" y2="${padT + innerH}" stroke="var(--dg-line)"></line>`;
+    pts.forEach((p, i) => {
+      const r = 3 + ((p.size - s0) / ((s1 - s0) || 1)) * 9;
+      out += `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="${r.toFixed(1)}" fill="${DG_PALETTE[i % 7]}" opacity="0.55"></circle>`;
+    });
+    out += `<text x="${padL}" y="${padT + innerH + 16}" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x0))}</text><text x="${padL + innerW}" y="${padT + innerH + 16}" text-anchor="end" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x1))}</text>`;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  const g = groupFor((o.measures || [])[0]);
+  const vals = g.values, labs = g.labels;
+  if (!vals.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет данных для графика</text></svg>';
+  const max = Math.max(...vals, 1);
+  let out = '';
+  for (let i = 0; i <= 3; i++) {
+    const gy = padT + innerH - (i / 3) * innerH;
+    out += `<line x1="${padL}" y1="${gy}" x2="${padL + innerW}" y2="${gy}" stroke="var(--dg-line)" stroke-width="0.7"></line>` +
+      `<text x="${padL - 4}" y="${gy + 3}" text-anchor="end" font-size="8" fill="var(--dg-mut)">${esc(fmtCompact(max * i / 3))}</text>`;
+  }
+  if (o.type === 'barchart') {
+    const n = vals.length || 1, bw = Math.max((innerW) / n - 4, 5);
+    vals.forEach((v, i) => {
+      const bh = Math.max(v / max * innerH, 2);
+      const x = padL + i * (innerW / n) + 2;
+      out += `<rect x="${x}" y="${padT + innerH - bh}" width="${bw}" height="${bh}" rx="2" fill="${DG_PALETTE[i % 8]}"></rect>` +
+        `<text x="${x + bw / 2}" y="${padT + innerH - bh - 3}" text-anchor="middle" font-size="8" fill="var(--dg-ink)">${esc(fmtCompact(v))}</text>` +
+        `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="7.5" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 9))}</text>`;
+    });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  if (o.type === 'linechart') {
+    const pts = vals.map((v, i) => [padL + i * (innerW / Math.max(vals.length - 1, 1)), padT + innerH - (v / max * innerH)]);
+    for (let i = 1; i < pts.length; i++) {
+      out += `<rect x="${Math.min(pts[i - 1][0], pts[i][0])}" y="${Math.min(pts[i - 1][1], pts[i][1])}" width="${Math.abs(pts[i][0] - pts[i - 1][0])}" height="${padT + innerH - Math.min(pts[i - 1][1], pts[i][1])}" fill="${DG_PALETTE[0]}" opacity="0.08"></rect>`;
+    }
+    out += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} L${padL + innerW},${padT + innerH} L${padL},${padT + innerH} Z" fill="${DG_PALETTE[0]}" opacity="0.12"></path>` +
+      `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="2.2"></path>`;
+    pts.forEach((p, i) => {
+      out += `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${DG_PALETTE[0]}" stroke="var(--dg-panel)" stroke-width="1.4"></circle>`;
+      if (vals.length <= 14) out += `<text x="${p[0]}" y="${H - 8}" text-anchor="middle" font-size="8" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 10))}</text>`;
+    });
+    out += `<text x="${padL + innerW}" y="${pts[pts.length - 1][1] - 8}" text-anchor="end" font-size="10" font-weight="600" fill="var(--dg-ink)">${esc(fmtRu(vals[vals.length - 1]))}</text>`;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  if (o.type === 'combochart') {
+    const vals2 = groupFor((o.measures || [])[1]).values;
+    const n = vals.length || 1, bw = Math.max(innerW / n - 4, 4);
+    vals.forEach((v, i) => {
+      const bh = Math.max(v / max * innerH, 2);
+      const x = padL + i * (innerW / n) + 2;
+      out += `<rect x="${x}" y="${padT + innerH - bh}" width="${bw}" height="${bh}" fill="${DG_PALETTE[0]}"></rect>`;
+    });
+    const m2max = Math.max(...vals2, 1);
+    const pts2 = vals2.map((v, i) => [padL + i * (innerW / Math.max(vals2.length - 1, 1)) + bw / 2, padT + innerH - (v / m2max * innerH)]);
+    out += `<path d="${pts2.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${DG_PALETTE[3]}" stroke-width="2"></path>`;
+    pts2.forEach(p => { out += `<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="${DG_PALETTE[3]}"></circle>`; });
+    labs.forEach((l, i) => { if (i < n) out += `<text x="${padL + i * (innerW / n) + innerW / n / 2}" y="${H - 8}" text-anchor="middle" font-size="7.5" fill="var(--dg-mut)">${esc(String(l).slice(0, 9))}</text>`; });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  if (o.type === 'piechart') {
+    const total = vals.reduce((a, b) => a + b, 0) || 1;
+    const cx = 74, cy = H / 2, r = Math.min(cx, cy) - 10;
+    let ang = -Math.PI / 2;
+    vals.slice(0, 7).forEach((v, i) => {
+      const a2 = ang + v / total * Math.PI * 2;
+      const large = v / total > 0.5 ? 1 : 0;
+      out += `<path d="M${cx},${cy} L${cx + r * Math.cos(ang)},${cy + r * Math.sin(ang)} A${r},${r} 0 ${large} 1 ${cx + r * Math.cos(a2)},${cy + r * Math.sin(a2)} Z" fill="${DG_PALETTE[i % 8]}"></path>`;
+      ang = a2;
+    });
+    vals.slice(0, 5).forEach((v, i) => {
+      out += `<rect x="150" y="${20 + i * 18}" width="9" height="9" rx="2" fill="${DG_PALETTE[i % 8]}"></rect>` +
+        `<text x="164" y="${28 + i * 18}" font-size="9" fill="var(--dg-ink)">${esc(String(labs[i]).slice(0, 10))}</text>` +
+        `<text x="285" y="${28 + i * 18}" text-anchor="end" font-size="9" fill="var(--dg-mut)">${Math.round(v / total * 100)}%</text>`;
+    });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  if (o.type === 'treemap') {
+    const total = vals.reduce((a, b) => a + b, 0) || 1;
+    let x = padL;
+    vals.forEach((v, i) => {
+      const bw = Math.max(v / total * innerW - 2, 16);
+      out += `<rect x="${x}" y="${padT}" width="${bw}" height="${innerH}" rx="3" fill="${DG_PALETTE[i % 8]}" opacity="0.85"></rect>` +
+        `<text x="${x + 5}" y="${padT + 16}" font-size="9" font-weight="600" fill="#fff">${esc(fmtCompact(v))}</text>` +
+        `<text x="${x + 5}" y="${padT + 30}" font-size="8" fill="#fff" opacity="0.9">${esc(String(labs[i]).slice(0, 10))}</text>`;
+      x += bw + 2;
+    });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  return '';
+}
+
+// ── редактор раскладки: плитки absolute, drag за заголовок, resize за угол ──
+let sheetDrag = null, sheetRsz = null;
+let layoutEdited = false;
+
+function sheetRect() {
+  return document.getElementById('dg-sheet').getBoundingClientRect();
+}
+
+function updateTileEl(el, o) {
+  const [dc, dr] = DEFAULT_SIZE[o.type] || [4, 3];
+  const cs = o.colspan || dc, rs = o.rowspan || dr;
+  el.style.left = 'calc(' + (o.col / SHEET_COLS * 100) + '% + ' + (o.col * SHEET_GAP) + 'px)';
+  el.style.top = (o.row * (SHEET_ROWH + SHEET_GAP)) + 'px';
+  el.style.width = 'calc(' + (cs / SHEET_COLS * 100) + '% - ' + (SHEET_GAP + 2) + 'px)';
+  el.style.height = (rs * SHEET_ROWH + (rs - 1) * SHEET_GAP) + 'px';
+}
+
+function reflowPushed(dragged) {
+  const sheetObj = state.spec.sheets[0];
+  for (const o of sheetObj.objects) {
+    if (o === dragged) continue;
+    const overlap = dragged.col < o.col + o.colspan && o.col < dragged.col + dragged.colspan &&
+      dragged.row < o.row + o.rowspan && o.row < dragged.row + dragged.rowspan;
+    if (overlap) {
+      o.row = dragged.row + dragged.rowspan;
+      const el = document.getElementById('dg-tile-' + o.col + '-' + o.row + '-' + o.type);
+      if (el) updateTileEl(el, o);
+    }
+  }
+  updateSheetHeight();
+}
+
+function updateSheetHeight() {
+  const sheetObj = state.spec.sheets[0];
+  const maxY = Math.max(4, ...sheetObj.objects.map(o => o.row + o.rowspan));
+  document.getElementById('dg-sheet').style.minHeight = (maxY * (SHEET_ROWH + SHEET_GAP) + SHEET_GAP) + 'px';
+}
+
+function renderEditor(spec, pd) {
+  const sheet = document.getElementById('dg-sheet');
+  sheet.innerHTML = '<div class="dg-ghost" id="dg-sheet-ghost"></div>';
+  if (!pd) {
+    // первый проход: каркас плиток, затем догружаем агрегаты и перерисовываем тела
+    pd = { groups: {}, sample: [], fields: [], kpiValues: {}, scatterPoints: {} };
+    previewDataFor(spec).then(data => {
+      state.previewData = data;
+      renderEditor(spec, data);
+    }).catch(e => {
+      const note = document.getElementById('dg-layout-note');
+      if (note) note.textContent = 'Предпросмотр недоступен: ' + e.message;
+    });
+  }
+  const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
+  specObjectCells(spec).forEach(({ o, si, oi }) => {
+    const el = document.createElement('div');
+    el.className = 'dg-tile' + (CHART_TYPES.includes(o.type) ? ' chart' : '') + (o.type === 'kpi' ? ' kpi' : '');
+    el.id = 'dg-tile-' + o.col + '-' + o.row + '-' + o.type + '-' + oi;
+    el.dataset.si = si; el.dataset.oi = oi;
+    updateTileEl(el, o);
+    el.innerHTML =
+      '<div class="dg-tile-head"><span class="grip">⠿</span><span class="ht">' + esc(o.title || o.field || o.measure || o.type) + '</span><span class="rs" title="Изменить размер"></span></div>' +
+      '<div class="dg-tile-body"></div>';
+    sheet.appendChild(el);
+    const body = el.querySelector('.dg-tile-body');
+    if (CHART_TYPES.includes(o.type)) {
+      body.innerHTML = renderedChartSVG(o, spec, pd);
+    } else if (o.type === 'kpi') {
+      body.innerHTML = '<div class="kpi-value">' + esc(fmtCompact((pd.kpiValues || {})[o.measure])) + '</div><div class="kpi-sub">' + esc(measById[o.measure]?.title || '') + '</div>';
+    } else if (o.type === 'table' && pd.sample && pd.fields) {
+      const head = pd.fields.map(f => '<th>' + esc(f) + '</th>').join('');
+      const bodyRows = pd.sample.slice(0, 5).map(r => '<tr>' + pd.fields.map((f, i) => '<td>' + esc(String(r[i])) + '</td>').join('') + '</tr>').join('');
+      body.innerHTML = '<table class="dg-table" style="font-size:10px;"><thead><tr>' + head + '</tr></thead><tbody>' + bodyRows + '</tbody></table>';
+    } else if (o.type === 'listbox' && pd.fields) {
+      body.innerHTML = '<div class="dg-chips" style="gap:4px;">' + pd.fields.slice(0, 3).map(f => '<span class="dg-chip" style="font-size:10px;padding:2px 8px;">' + esc(f) + '</span>').join('') + '</div>';
+    }
+    const head = el.querySelector('.dg-tile-head');
+    head.addEventListener('pointerdown', e => { if (layoutEdited) startSheetDrag(e, o, el); });
+    const rs = el.querySelector('.rs');
+    rs.addEventListener('pointerdown', e => { if (layoutEdited) { e.stopPropagation(); startSheetResize(e, o, el); } });
+  });
+  updateSheetHeight();
+  icons();
+}
+
+function startSheetDrag(e, o, el) {
+  e.preventDefault();
+  const rect = sheetRect();
+  sheetDrag = { o, el, sx: e.clientX, sy: e.clientY, c0: o.col, r0: o.row, cellW: rect.width / SHEET_COLS, cellH: SHEET_ROWH + SHEET_GAP };
+  el.style.zIndex = 9; el.style.opacity = '0.8'; el.style.transition = 'none';
+  const ghost = document.getElementById('dg-sheet-ghost');
+  ghost.style.display = 'block';
+  updateGhost(o);
+  window.addEventListener('pointermove', sheetDragMove);
+  window.addEventListener('pointerup', sheetDragUp, { once: true });
+}
+function updateGhost(o) {
+  const ghost = document.getElementById('dg-sheet-ghost');
+  updateTileEl(ghost, o);
+}
+function sheetDragMove(e) {
+  if (!sheetDrag) return;
+  const { o, el, sx, sy, c0, r0, cellW, cellH } = sheetDrag;
+  el.style.transform = 'translate(' + (e.clientX - sx) + 'px,' + (e.clientY - sy) + 'px)';
+  o.col = Math.max(0, Math.min(SHEET_COLS - o.colspan, c0 + Math.round((e.clientX - sx) / cellW)));
+  o.row = Math.max(0, r0 + Math.round((e.clientY - sy) / cellH));
+  updateGhost(o);
+}
+function sheetDragUp() {
+  window.removeEventListener('pointermove', sheetDragMove);
+  if (!sheetDrag) return;
+  const { o, el } = sheetDrag;
+  el.style.transform = ''; el.style.zIndex = ''; el.style.opacity = ''; el.style.transition = '';
+  document.getElementById('dg-sheet-ghost').style.display = 'none';
+  reflowPushed(o);
+  sheetDrag = null;
+  markLayoutEdited();
+  renderEditor(state.spec); // перерисовка с новыми координатами
+}
+
+function startSheetResize(e, o, el) {
+  e.preventDefault();
+  const rect = sheetRect();
+  sheetRsz = { o, el, sx: e.clientX, sy: e.clientY, w0: o.colspan, h0: o.rowspan, cellW: rect.width / SHEET_COLS, cellH: SHEET_ROWH + SHEET_GAP };
+  el.style.zIndex = 9; el.style.transition = 'none';
+  window.addEventListener('pointermove', sheetResizeMove);
+  window.addEventListener('pointerup', sheetResizeUp, { once: true });
+}
+function sheetResizeMove(e) {
+  if (!sheetRsz) return;
+  const { o, el, sx, sy, w0, h0, cellW, cellH } = sheetRsz;
+  const min = MIN_SIZE[o.type] || [2, 2];
+  o.colspan = Math.max(min[0], Math.min(Math.round((e.clientX - sx) / cellW) + w0, SHEET_COLS - o.col));
+  o.rowspan = Math.max(min[1], Math.min(Math.round((e.clientY - sy) / cellH) + h0, 12 - o.row));
+  updateTileEl(el, o);
+  reflowPushed(o);
+}
+function sheetResizeUp() {
+  window.removeEventListener('pointermove', sheetResizeMove);
+  sheetRsz = null;
+  markLayoutEdited();
+  renderEditor(state.spec);
+}
+
+function markLayoutEdited() {
+  layoutEdited = true;
+  state.specName = null;
+  state.specHash = null;
+  state.specChecked = true;
+  state.built = false;
+  state.published = false;
+  $('#dg-spec-view').textContent = JSON.stringify(state.spec, null, 2);
+  $('#dg-top-spec').textContent = state.spec.appName + ' (раскладка изменена)';
+  $('#dg-build-spec-name').textContent = state.spec.appName + ' (раскладка изменена)';
+  $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
+  const rec = document.getElementById('dg-save-spec-note');
+  if (rec) rec.style.display = 'flex';
+  refreshGuides();
+  updateApprovalBadge();
+}
+
+$('#dg-btn-save-layout').addEventListener('click', () => {
+  layoutEdited = false;
+  state.specChecked = true;
+  refreshGuides();
+  updateApprovalBadge();
+  $('#dg-layout-note').textContent = 'Раскладка записана в spec (в памяти). Пересоберите черновик — и утвердите заново при публикации.';
+});
+
+// ── правка макета словами (SSE, живой прогресс) ──
+
+// ── правка макета словами (SSE, живой прогресс) ──
+$('#dg-btn-patch').addEventListener('click', async () => {
+  const btn = $('#dg-btn-patch'), logEl = $('#dg-patch-log');
+  const instruction = $('#dg-patch-in').value.trim();
+  if (!instruction) return;
+  if (!state.spec) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала откройте или сгенерируйте spec на шаге «Спецификация».'; return; }
+  btn.disabled = true;
+  progressStart(logEl, 'Отправляю spec и правку в модель…');
+  try {
+    const r = await apiStream('/api/patch-spec', { spec: state.spec, instruction }, text => {
+      progressPhase('Модель формирует правку…');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    });
+    progressStop(true);
+    state.spec = r.spec;
+    state.specName = null;
+    state.specHash = null;
+    state.specChecked = true;
+    state.built = false;
+    state.published = false;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName + ' (изменён)';
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (изменён, не сохранён)';
+    $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
+    renderEditor(r.spec);
+    logEl.textContent += '\nМакет обновлён. Пересоберите черновик на вкладке «Сборка и проверка».';
+    setStatus('dg-st-spec', '✓');
+  } catch (e) {
+    progressStop(false);
+    logEl.classList.add('is-err');
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
+});
+
+// ── сборка (SSE, живой прогресс и самоисправление) ──
+$('#dg-btn-build').addEventListener('click', async () => {
+  if (!state.spec) return;
+  const btn = $('#dg-btn-build'), timer = $('#dg-build-timer');
+  btn.disabled = true;
+  const logEl = $('#dg-build-log');
+  const t0 = Date.now();
+  progressStart(logEl, 'Подключаюсь к Qlik и собираю приложение…');
+  const tick = setInterval(() => { timer.textContent = 'идёт сборка… ' + Math.round((Date.now() - t0) / 1000) + ' с'; }, 500);
+  const payload = state.specName ? { specName: state.specName } : { spec: state.spec };
+  try {
+    const r = await apiStream('/api/build', payload, text => {
+      if (/Самоисправление/.test(text)) progressPhase('Сборка упала — модель исправляет spec…');
+      else if (/Модель исправила/.test(text)) progressPhase('Пересобираю с исправлениями…');
+      else if (/Загрузка|данные/i.test(text)) progressPhase('Загружаю данные в Qlik…');
+      else progressPhase('Сборка в Qlik…');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+      logEl.scrollTop = logEl.scrollHeight;
+    });
+    clearInterval(tick);
+    progressStop(true);
+    timer.textContent = 'готово за ' + Math.round((Date.now() - t0) / 1000) + ' с';
+    logEl.classList.add('is-ok');
+    if (r.healed && r.healed.spec) {
+      state.spec = r.healed.spec;
+      state.specName = null;
+      state.specHash = null;
+      state.specChecked = true;
+      $('#dg-spec-view').textContent = JSON.stringify(r.healed.spec, null, 2);
+      $('#dg-build-spec-name').textContent = r.healed.spec.appName + ' (исправлен ИИ, циклов: ' + r.healed.cycles + ')';
+    }
+    state.built = true;
+    state.published = false;
+    renderVerify(r.verify);
+    setStatus('dg-st-build', '✓');
+    pipeDone(['source', 'profile', 'privacy', 'spec', 'build']);
+  } catch (e) {
+    clearInterval(tick);
+    progressStop(false);
+    timer.textContent = '';
+    state.built = false;
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+    logEl.classList.add('is-err');
+  } finally { btn.disabled = false; refreshGuides(); icons(); }
+});
+
+function renderVerify(v) {
+  if (!v) return;
+  state.verifyOk = !v.objectErrors.length && v.rowsMatch !== false;
+  const rows = [];
+  for (const h of v.hyperCubes) rows.push('<li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>' +
+    esc(h.type) + ' «' + esc(h.title) + '»: <b>' + h.rows + '×' + h.cols + '</b></span></li>');
+  if (v.objectErrors.length) for (const e of v.objectErrors) rows.push('<li><span class="ic" style="background:color-mix(in srgb,var(--dg-bad) 15%,transparent);color:var(--dg-bad);"><i data-lucide="x" aria-hidden="true"></i></span><span>' + esc(e.type) + ' «' + esc(e.title) + '»: ' + esc(e.error) + '</span></li>');
+  if (v.expectedRows !== undefined) rows.push('<li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>Сверка строк: <b>' + v.modelRows + ' / ' + v.expectedRows + '</b> — ' + (v.rowsMatch ? 'совпадает' : 'РАСХОЖДЕНИЕ') + '</span></li>');
+  $('#dg-verify-out').innerHTML = '<div class="dg-card"><p class="dg-cardtitle"><i data-lucide="list-checks" aria-hidden="true"></i>Проверка перед публикацией ' +
+    '<span class="dg-badge ' + (v.objectErrors.length ? 'dg-badge--warn' : 'dg-badge--ok') + '" style="margin-left:auto;">' +
+    (v.objectErrors.length ? 'ошибок: ' + v.objectErrors.length : 'расхождений нет') + '</span></p><ul class="dg-checks">' + rows.join('') + '</ul>' +
+    '<div class="dg-rowbtn"><a class="dg-btn" href="https://' + esc(state.config ? state.config.host : '') + '/hub" target="_blank" rel="noopener"><i data-lucide="external-link" aria-hidden="true"></i>Открыть в Hub</a></div></div>';
+  icons();
+}
+
+// ── публикация ──
+async function loadStreams() {
+  const sel = $('#dg-stream-select');
+  try {
+    const r = await api('/api/streams');
+    state.streams = r.streams;
+    sel.innerHTML = r.streams.map(s => '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>').join('');
+  } catch (e) {
+    sel.innerHTML = '<option value="">— нет доступа к QRS —</option>';
+    $('#dg-publish-result').textContent = e.message;
+  }
+}
+
+async function loadApprovals() {
+  const r = await api('/api/approvals');
+  state.approvals = r.approvals;
+  const rows = r.approvals.map(a =>
+    '<tr><td>' + esc(a.specName) + '</td><td>' + esc(a.approvedBy) + '</td><td>' + esc((a.at || '').slice(0, 16).replace('T', ' ')) + '</td><td class="dg-mono">' + esc((a.hash || '').slice(0, 8)) + '</td></tr>').join('');
+  $('#dg-approvals-out').innerHTML = rows
+    ? '<table class="dg-table"><thead><tr><th>Spec</th><th>Утвердил</th><th>Когда</th><th>Хеш</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    : '<p class="dg-note">Утверждений пока нет.</p>';
+  updateApprovalBadge();
+}
+
+function currentSpecApproved() {
+  return state.specHash && state.approvals.some(a => a.hash === state.specHash);
+}
+
+function updateApprovalBadge() {
+  const badge = $('#dg-approval-badge'), btn = $('#dg-btn-publish');
+  if (currentSpecApproved()) {
+    badge.textContent = 'утверждено';
+    badge.className = 'dg-badge dg-badge--ok';
+    btn.disabled = false;
+    setStatus('dg-st-publish', '');
+  } else {
+    badge.textContent = state.spec ? 'требуется утверждение' : 'spec не выбран';
+    badge.className = 'dg-badge dg-badge--warn';
+    btn.disabled = true;
+    setStatus('dg-st-publish', '🔒');
+  }
+}
+
+$('#dg-btn-approve').addEventListener('click', async () => {
+  const by = $('#dg-approve-by').value.trim();
+  if (!by) { $('#dg-publish-result').textContent = 'Впишите, кто утвердил.'; return; }
+  if (!state.spec) { $('#dg-publish-result').textContent = 'Сначала откройте или сгенерируйте spec.'; return; }
+  try {
+    // работает и для spec-файла, и для сгенерированного/изменённого ИИ (spec в памяти)
+    const body = state.specName
+      ? { specName: state.specName, approvedBy: by }
+      : { spec: state.spec, approvedBy: by };
+    const r = await api('/api/approve', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+    state.specHash = r.entry.hash;
+    $('#dg-approve-by').value = '';
+    $('#dg-publish-hash').textContent = r.entry.hash.slice(0, 8);
+    await loadApprovals();
+    refreshGuides();
+  } catch (e) { $('#dg-publish-result').textContent = 'Ошибка: ' + e.message; }
+});
+
+$('#dg-btn-streams').addEventListener('click', loadStreams);
+
+$('#dg-btn-publish').addEventListener('click', async () => {
+  if (!state.spec || !$('#dg-stream-select').value) return;
+  const btn = $('#dg-btn-publish');
+  btn.disabled = true;
+  $('#dg-publish-result').textContent = 'Публикую через QRS…';
+  try {
+    const body = state.specName
+      ? { specName: state.specName, streamId: $('#dg-stream-select').value }
+      : { spec: state.spec, streamId: $('#dg-stream-select').value };
+    const r = await api('/api/publish', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+    const st = r.published.stream || {};
+    state.published = true;
+    $('#dg-publish-result').innerHTML = '<span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>опубликовано в стрим «' + esc(st.name || '') + '»</span>';
+    pipeDone(['source', 'profile', 'privacy', 'spec', 'build', 'publish']);
+    setStatus('dg-st-publish', '✓');
+  } catch (e) {
+    $('#dg-publish-result').textContent = 'Ошибка: ' + e.message;
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
+});
+
+// ── браузер сетевой папки Qlik ──
+const share = { rel: '', selected: null, status: null };
+
+async function shareLoad() {
+  const st = await api('/api/share-status');
+  share.status = st;
+  const badge = $('#dg-share-status');
+  if (st.mounted && st.exists) {
+    badge.textContent = 'шара подключена';
+    badge.className = 'dg-badge dg-badge--ok';
+    $('#dg-btn-share-mount').classList.add('dg-hidden');
+    await shareList('');
+  } else if (st.mounted && !st.exists) {
+    badge.textContent = 'папка ' + st.userDir + ' на шаре не найдена';
+    badge.className = 'dg-badge dg-badge--warn';
+    $('#dg-share-list').innerHTML = '<p class="dg-note">Создайте папку <span class="dg-mono">' + esc(st.userDir) + '</span> на шаре или проверьте имя.</p>';
+  } else {
+    badge.textContent = 'шара не подключена';
+    badge.className = 'dg-badge dg-badge--warn';
+    $('#dg-btn-share-mount').classList.remove('dg-hidden');
+    $('#dg-share-list').innerHTML = '<p class="dg-note">Подключите шару — Finder запросит доменные креды.</p>';
+  }
+}
+
+$('#dg-btn-share-mount').addEventListener('click', async () => {
+  const badge = $('#dg-share-status');
+  badge.textContent = 'подключаю…';
+  try { await api('/api/share-mount', { method: 'POST' }); }
+  catch (e) { badge.textContent = 'ошибка подключения'; return; }
+  await shareLoad();
+});
+
+$('#dg-btn-share-refresh').addEventListener('click', () => shareList(share.rel));
+
+// список шары обновляется при каждом открытии вкладки «Источник»
+navBtns.forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.step === 'source' && share.status && share.status.mounted) {
+    shareList(share.rel).catch(() => {});
+  }
+}));
+
+async function shareList(sub) {
+  const r = await api('/api/share-files?sub=' + encodeURIComponent(sub));
+  share.rel = r.sub || '';
+  share.selected = null;
+  $('#dg-share-actions').style.display = 'none';
+  $('#dg-share-selected').textContent = 'Выберите файл кликом — путь lib:// построится сам, inline не будет.';
+  const crumbs = [[r.sub ? 'корень' : '', '']];
+  const parts = (r.sub || '').split('/').filter(Boolean);
+  let acc = '';
+  parts.forEach(p => { acc += (acc ? '/' : '') + p; crumbs.push([p, acc]); });
+  $('#dg-share-crumbs').innerHTML = crumbs.map((c, i) =>
+    (i ? ' / ' : '') + '<a data-sub="' + esc(c[1]) + '">' + esc(c[0] || 'корень') + '</a>').join('');
+  $('#dg-share-crumbs').querySelectorAll('a').forEach(a => a.addEventListener('click', () => shareList(a.dataset.sub)));
+
+  const list = $('#dg-share-list');
+  let html = '';
+  if ((r.strays || []).length && !r.sub) {
+    html += '<p class="dg-note" style="padding:4px 8px 0;">Найдено в корне шары (мимо вашей папки):</p>';
+    for (const f of r.strays) {
+      html += '<div class="dg-share-item" style="cursor:default;"><i data-lucide="move-down" aria-hidden="true"></i>' + esc(f.name) +
+        '<span class="meta">' + Math.round(f.size / 1024) + ' КБ</span>' +
+        '<button class="dg-btn" type="button" data-adopt="' + esc(f.name) + '" style="flex:none;">→ в мою папку</button></div>';
+    }
+    html += '<hr style="border:none;border-top:1px solid var(--dg-line);margin:4px 8px;">';
+  }
+  if (r.sub) html += '<button class="dg-share-item" type="button" data-up="1"><i data-lucide="arrow-left" aria-hidden="true"></i>… назад</button>';
+  for (const f of r.folders || []) {
+    html += '<button class="dg-share-item" type="button" data-folder="' + esc(f) + '"><i data-lucide="folder" aria-hidden="true"></i>' + esc(f) + '</button>';
+  }
+  for (const f of r.files || []) {
+    html += '<button class="dg-share-item" type="button" data-file="' + esc(f.name) + '"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>' + esc(f.name) +
+      '<span class="meta">' + Math.round(f.size / 1024) + ' КБ · ' + new Date(f.mtime).toLocaleDateString('ru') + '</span></button>';
+  }
+  if (!r.folders?.length && !r.files?.length) html += '<p class="dg-note" style="padding:8px;">Папка пуста — скопируйте сюда .xlsx через Finder.</p>';
+  list.innerHTML = '<div class="dg-share-list">' + html + '</div>';
+  icons();
+
+  list.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
+    const parts = (share.rel || '').split('/').filter(Boolean); parts.pop();
+    shareList(parts.join('/'));
+  }));
+  list.querySelectorAll('[data-folder]').forEach(b => b.addEventListener('click', () => {
+    shareList((share.rel ? share.rel + '/' : '') + b.dataset.folder);
+  }));
+  list.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', () => {
+    list.querySelectorAll('.dg-share-item').forEach(x => x.classList.remove('is-on'));
+    b.classList.add('is-on');
+    selectShareFile(b.dataset.file);
+  }));
+  list.querySelectorAll('[data-adopt]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'переношу…';
+    try {
+      await api('/api/share-adopt', { method: 'POST', body: JSON.stringify({ name: b.dataset.adopt }), headers: { 'Content-Type': 'application/json' } });
+      await shareList(share.rel);
+    } catch (e) { b.disabled = false; b.textContent = 'ошибка: ' + e.message; }
+  }));
+}
+
+async function selectShareFile(name) {
+  share.selected = name;
+  const rel = (share.rel ? share.rel + '/' : '') + name;
+  const localPath = (share.status ? share.status.root : '/Volumes/Users/anufriev_d_v') + '/' + rel;
+  $('#dg-share-actions').style.display = 'flex';
+  $('#dg-share-selected').innerHTML = 'Выбран: <b>' + esc(name) + '</b> → <span class="dg-mono">lib://Рабочие_папки_разработчиков/anufriev_d_v/' + esc(rel) + '</span>';
+  shareHistoryAdd(name, rel);
+  $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Профилирую выбранный файл…</div>';
+  try {
+    const data = await api('/api/profile-path', { method: 'POST', body: JSON.stringify({ path: localPath }), headers: { 'Content-Type': 'application/json' } });
+    renderProfile(data);
+  } catch (e) {
+    $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>';
+  }
+}
+
+// история выбранных файлов (вариант 3): localStorage
+function shareHistoryAdd(name, rel) {
+  try {
+    const h = JSON.parse(localStorage.getItem('dg_share_history') || '[]').filter(x => x.rel !== rel);
+    h.unshift({ name, rel, at: Date.now() });
+    localStorage.setItem('dg_share_history', JSON.stringify(h.slice(0, 5)));
+  } catch (_) {}
+  shareHistoryRender();
+}
+
+function shareHistoryRender() {
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem('dg_share_history') || '[]'); } catch (_) {}
+  const sel = $('#dg-share-history');
+  if (!h.length) { sel.classList.add('dg-hidden'); return; }
+  sel.classList.remove('dg-hidden');
+  sel.innerHTML = '<option value="">Недавние…</option>' + h.map(x => '<option value="' + esc(x.rel) + '">' + esc(x.name) + '</option>').join('');
+  sel.onchange = async () => {
+    if (!sel.value) return;
+    const parts = sel.value.split('/'); parts.pop();
+    await shareList(parts.join('/'));
+    const item = $('#dg-share-list [data-file="' + CSS.escape(parts.length ? '' : '') + '"]') || null;
+    // выбор файла из истории: открываем папку и выбираем по имени
+    const name = h.find(x => x.rel === sel.value).name;
+    const btn = [...document.querySelectorAll('#dg-share-list [data-file]')].find(b => b.dataset.file === name);
+    if (btn) btn.click();
+  };
+}
+
+$('#dg-btn-layout-edit').addEventListener('click', () => {
+  layoutEdited = !layoutEdited;
+  document.getElementById('dg-sheet').classList.toggle('editing', layoutEdited);
+  $('#dg-btn-layout-edit').classList.toggle('is-on', layoutEdited);
+  $('#dg-btn-layout-edit').innerHTML = layoutEdited
+    ? '<i data-lucide="check" aria-hidden="true"></i>Готово'
+    : '<i data-lucide="move" aria-hidden="true"></i>Правка раскладки';
+  $('#dg-btn-save-layout').classList.toggle('dg-hidden', !layoutEdited);
+  $('#dg-layout-edit-hint').textContent = layoutEdited
+    ? 'Тяните плитки за заголовок, размер — за зелёный угол.'
+    : 'Включите правку — плитки станут перетаскиваемыми.';
+  if (state.spec) renderEditor(state.spec);
+  icons();
+});
+
+$('#dg-btn-profile-share').addEventListener('click', () => {
+  if (!share.selected) return;
+  // повторное профилирование (например, файл обновился на шаре)
+  selectShareFile(share.selected);
+});
+
+$('#dg-btn-gen-share').addEventListener('click', async () => {
+  const btn = $('#dg-btn-gen-share'), logEl = $('#dg-ai-log');
+  if (!share.selected) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Выберите файл в списке выше.'; return; }
+  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте выбранный файл.'; return; }
+  const rel = (share.rel ? share.rel + '/' : '') + share.selected;
+  const excelLib = 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + rel;
+  navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === 'spec'));
+  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-spec'; });
+  btn.disabled = true;
+  progressStart(logEl, 'Генерирую spec с excel-источником: ' + excelLib);
+  try {
+    const r = await apiStream('/api/generate-spec', {
+      profile: state.safeProfile,
+      description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
+      excelLib
+    }, text => {
+      progressPhase('Модель формирует spec (реальные данные)…');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    });
+    progressStop(true);
+    state.spec = r.spec;
+    state.specName = null;
+    state.specHash = null;
+    state.specChecked = true;
+    state.built = false;
+    state.published = false;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName;
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (excel: ' + share.selected + ')';
+    setStatus('dg-st-spec', '✓');
+    renderEditor(r.spec);
+  } catch (e) {
+    progressStop(false);
+    logEl.classList.add('is-err');
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
+});
+
+// ── старт ──
+(async () => {
+  await loadConfig();
+  await loadSpecList().catch(e => console.warn(e));
+  await loadApprovals().catch(e => console.warn(e));
+  await loadStreams().catch(e => console.warn(e));
+  await loadKeyStatus().catch(e => console.warn(e));
+  await loadAiPresets().catch(e => console.warn(e));
+  await shareLoad().catch(e => console.warn(e));
+  try {
+    const st = await api('/api/state');
+    if (st.profile && st.profile.safeProfile) {
+      renderProfile(st.profile);
+      const note = document.createElement('div');
+      note.className = 'dg-note';
+      note.style.marginTop = '6px';
+      note.textContent = 'Восстановлен последний профиль: ' + st.profile.file + ' (от ' + (st.profile.at || '').slice(0, 16).replace('T', ' ') + ')';
+      $('#dg-profile-out').appendChild(note);
+    }
+  } catch (e) { console.warn(e); }
+  refreshGuides();
+  icons();
+})();

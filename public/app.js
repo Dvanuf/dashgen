@@ -232,7 +232,7 @@ async function loadSpec(name) {
   $('#dg-spec-check-out').innerHTML = '';
   $('#dg-spec-badge').classList.add('dg-hidden');
   setStatus('dg-st-spec', '');
-  renderLayout(data.spec);
+  renderEditor(data.spec);
   refreshGuides();
   icons();
 }
@@ -346,7 +346,7 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
     $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
     setStatus('dg-st-spec', '✓');
     $('#dg-spec-check-out').innerHTML = '<span class="dg-note">Сгенерирован за ' + r.attempts + ' попыт. Перейдите на «Макет» или собирайте черновик.</span>';
-    renderLayout(r.spec);
+    renderEditor(r.spec);
     pipeDone(['source', 'profile', 'privacy', 'spec']);
   } catch (e) {
     progressStop(false);
@@ -357,15 +357,18 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
-// ── макет: два вида — скелет раскладки и отрисованный вариант «как в дашборде» ──
+// ── макет: редактор раскладки (drag + resize, переезд соседей вниз — как в Sense) ──
 const DG_PALETTE = ['#2e6da8', '#5a9fd8', '#8fb8dc', '#e0a63e', '#c04343', '#1f8f5f', '#97a3b8', '#73593c'];
+const SHEET_COLS = 24, SHEET_ROWH = 58, SHEET_GAP = 8;
+const CHART_TYPES = ['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap', 'gauge'];
+const MIN_SIZE = { kpi: [3, 2], linechart: [6, 3], barchart: [6, 3], piechart: [5, 3], scatterplot: [6, 3], combochart: [6, 3], treemap: [6, 3], gauge: [4, 3], table: [8, 3], listbox: [3, 2], 'pivot-table': [8, 3] };
+const DEFAULT_SIZE = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], piechart: [8, 4], scatterplot: [10, 5], combochart: [10, 4], treemap: [10, 4], gauge: [5, 3], table: [16, 5], listbox: [3, 4], 'pivot-table': [12, 5] };
 
 function fieldFromFormula(f) {
   const m = String(f || '').match(/^(sum|count|avg)\s*\(\s*(?:distinct\s+)?\[?([^\]\)]+?)\]?\s*\)/i);
   return m ? { agg: m[1].toLowerCase(), distinct: /distinct/i.test(m[0]), field: (m[2] || '').trim() } : null;
 }
 
-// группы, которые нужны объектам spec: [{dim, measure, agg}]
 function layoutGroups(spec) {
   const dimsById = {};
   for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
@@ -381,8 +384,6 @@ function layoutGroups(spec) {
   }
   return groups;
 }
-
-// KPI и пузырьковые из spec — для серверных агрегатов
 function layoutKpis(spec) {
   return (spec.measures || []).filter(m => (spec.sheets || []).some(s => (s.objects || []).some(o => o.type === 'kpi' && o.measure === m.id)))
     .map(m => ({ id: m.id, formula: m.formula }));
@@ -406,7 +407,6 @@ function layoutScatters(spec) {
 
 async function previewDataFor(spec) {
   const groups = layoutGroups(spec), kpis = layoutKpis(spec), scatters = layoutScatters(spec);
-  // inline-синтетика: агрегируем в браузере из spec.source.rows
   if (spec.source.type === 'inline') {
     const { fields, rows } = spec.source;
     const idx = f => fields.indexOf(f);
@@ -442,7 +442,6 @@ async function previewDataFor(spec) {
     }
     return { groups: gOut, kpiValues, scatterPoints: sOut, sample: (rows || []).slice(0, 8).map(r => fields.map(f => r[fields.indexOf(f)])), fields, rowCount: (rows || []).length };
   }
-  // excel: агрегаты считает сервер по локальному файлу (или резолвит lib:// на шару)
   const r = await api('/api/preview-data', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -453,7 +452,6 @@ async function previewDataFor(spec) {
   return r;
 }
 
-// Числа: компакт (млрд/млн/тыс) и ру-формат
 function fmtCompact(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
   const a = Math.abs(v);
@@ -464,9 +462,6 @@ function fmtCompact(v) {
 }
 function fmtRu(v) { return v === null || v === undefined || isNaN(v) ? '—' : Math.round(v).toLocaleString('ru-RU'); }
 
-const CHART_TYPES = ['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap', 'gauge'];
-const DEFAULT_SIZE = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], piechart: [8, 4], scatterplot: [10, 5], combochart: [10, 4], treemap: [10, 4], gauge: [5, 3], table: [20, 5], listbox: [4, 4], 'pivot-table': [12, 5] };
-
 function specObjectCells(spec) {
   const out = [];
   (spec.sheets || []).forEach((sheet, si) => (sheet.objects || []).forEach((o, oi) => {
@@ -476,29 +471,17 @@ function specObjectCells(spec) {
   return out;
 }
 
-// СКЕЛЕТ: сетка с пустыми слотами (тип + заголовок), без данных
-function renderSkeleton(spec) {
-  const cells = specObjectCells(spec).map(({ o, cs, rs }) =>
-    '<div class="gcell skeleton" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
-    '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
-    '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' +
-    '<div class="skeleton-fill"></div></div>');
-  return '<div class="dg-grid dg-grid-skeleton">' + cells.join('') + '</div>';
-}
-
-// ОТРИСОВКА: диаграммы в стиле дашборда
+// Отрисовка содержимого плитки (диаграмма/таблица/KPI) — используется редактором
 function renderedChartSVG(o, spec, pd) {
   const dimsById = {}; for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
   const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
   const dimField = dimsById[o.dimension];
   const W = 300, H = 150, padL = 40, padB = 24, padT = 10;
   const innerW = W - padL - 10, innerH = H - padB - padT;
-
   const groupFor = mId => {
     const fm = fieldFromFormula(measById[mId]?.formula) || { agg: 'count', field: null };
     return (pd.groups || {})[dimField + '|' + fm.field + '|' + fm.agg] || { labels: [], values: [] };
   };
-
   if (o.type === 'kpi') {
     const v = (pd.kpiValues || {})[o.measure];
     return '<svg viewBox="0 0 300 150">' +
@@ -518,9 +501,8 @@ function renderedChartSVG(o, spec, pd) {
       `<text x="150" y="114" text-anchor="middle" font-size="11" fill="var(--dg-mut)">${esc(measById[o.measure]?.title || '')}</text></svg>`;
   }
   if (o.type === 'scatterplot') {
-    const sKey = layoutScatters(spec).find(s => true)?.key || '';
     const key = o.dimension + '|' + (o.measures || []).join('|');
-    const pts = (pd.scatterPoints || {})[key] || (pd.scatterPoints || {})[sKey] || [];
+    const pts = (pd.scatterPoints || {})[key] || [];
     if (!pts.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет числовых пар</text></svg>';
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y), ss = pts.map(p => p.size ?? 1);
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -535,13 +517,11 @@ function renderedChartSVG(o, spec, pd) {
     out += `<text x="${padL}" y="${padT + innerH + 16}" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x0))}</text><text x="${padL + innerW}" y="${padT + innerH + 16}" text-anchor="end" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x1))}</text>`;
     return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
-  // Остальные графики — по группе {labels, values}
   const g = groupFor((o.measures || [])[0]);
   const vals = g.values, labs = g.labels;
   if (!vals.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет данных для графика</text></svg>';
   const max = Math.max(...vals, 1);
   let out = '';
-  // сетка и подписи оси Y
   for (let i = 0; i <= 3; i++) {
     const gy = padT + innerH - (i / 3) * innerH;
     out += `<line x1="${padL}" y1="${gy}" x2="${padL + innerW}" y2="${gy}" stroke="var(--dg-line)" stroke-width="0.7"></line>` +
@@ -619,58 +599,175 @@ function renderedChartSVG(o, spec, pd) {
   return '';
 }
 
-function renderLayout(spec) {
-  const skel = renderSkeleton(spec);
-  const renderedCells = specObjectCells(spec).map(({ o, si, oi, cs, rs }) => {
-    const isChart = CHART_TYPES.includes(o.type);
-    const isKpi = o.type === 'kpi';
-    const inner = isChart ? '<div class="ph"></div>' : isKpi ? '<div class="kpi-loading">…</div>' :
-      o.type === 'table' ? '<div class="tbl" data-tbl="' + si + '-' + oi + '"></div>' :
-      o.type === 'listbox' ? '<div class="lb-sample"></div>' : '';
-    return '<div class="gcell ' + (isKpi ? 'kpi' : isChart ? 'chart' : '') + '" id="dg-cell-' + si + '-' + oi + '" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
-      '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
-      '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' + inner + '</div>';
-  });
+// ── редактор раскладки: плитки absolute, drag за заголовок, resize за угол ──
+let sheetDrag = null, sheetRsz = null;
+let layoutEdited = false;
 
-  $('#dg-layout-out').innerHTML =
-    '<h3 class="dg-h3">1 · Скелет раскладки (сетка 24×12)</h3>' + skel +
-    '<h3 class="dg-h3" style="margin-top:18px;">2 · Как будет выглядеть в дашборде</h3>' +
-    '<div class="dg-grid dg-grid-rendered">' + renderedCells.join('') + '</div>' +
-    '<p class="dg-note" style="margin:8px 0 0;">Отрисованный вариант — эскиз на данных вашего файла; точный вид — в черновике Qlik.</p>';
-
-  // данные и отрисовка
-  previewDataFor(spec).then(pd => {
-    state.previewData = pd;
-    const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
-    specObjectCells(spec).forEach(({ o, si, oi }) => {
-      const cell = document.getElementById('dg-cell-' + si + '-' + oi);
-      if (!cell) return;
-      if (CHART_TYPES.includes(o.type)) {
-        const ph = cell.querySelector('.ph'); if (ph) ph.remove();
-        const svg = renderedChartSVG(o, spec, pd);
-        if (svg) cell.insertAdjacentHTML('beforeend', svg);
-      } else if (o.type === 'kpi') {
-        const l = cell.querySelector('.kpi-loading'); if (l) l.remove();
-        const v = (pd.kpiValues || {})[o.measure];
-        cell.insertAdjacentHTML('beforeend', '<div class="kpi-value">' + esc(fmtCompact(v)) + '</div><div class="kpi-sub">' + esc(measById[o.measure]?.title || '') + '</div>');
-      } else if (o.type === 'table' && pd.sample) {
-        const t = cell.querySelector('[data-tbl]');
-        if (t && pd.fields) {
-          const head = pd.fields.map(f => '<th>' + esc(f) + '</th>').join('');
-          const body = pd.sample.slice(0, 5).map(r => '<tr>' + pd.fields.map((f, i) => '<td>' + esc(String(r[i])) + '</td>').join('') + '</tr>').join('');
-          t.innerHTML = '<table class="dg-table" style="font-size:10.5px;"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
-        }
-      } else if (o.type === 'listbox' && pd.fields) {
-        const lb = cell.querySelector('.lb-sample');
-        if (lb) lb.innerHTML = '<div class="dg-chips" style="gap:4px;">' + pd.fields.slice(0, 3).map(f => '<span class="dg-chip" style="font-size:10px;padding:2px 8px;">' + esc(f) + '</span>').join('') + '</div>';
-      }
-    });
-    icons();
-  }).catch(e => {
-    const n = document.getElementById('dg-layout-out');
-    n.insertAdjacentHTML('beforeend', '<p class="dg-note">Предпросмотр недоступен: ' + esc(e.message) + '</p>');
-  });
+function sheetRect() {
+  return document.getElementById('dg-sheet').getBoundingClientRect();
 }
+
+function updateTileEl(el, o) {
+  const [dc, dr] = DEFAULT_SIZE[o.type] || [4, 3];
+  const cs = o.colspan || dc, rs = o.rowspan || dr;
+  el.style.left = 'calc(' + (o.col / SHEET_COLS * 100) + '% + ' + (o.col * SHEET_GAP) + 'px)';
+  el.style.top = (o.row * (SHEET_ROWH + SHEET_GAP)) + 'px';
+  el.style.width = 'calc(' + (cs / SHEET_COLS * 100) + '% - ' + (SHEET_GAP + 2) + 'px)';
+  el.style.height = (rs * SHEET_ROWH + (rs - 1) * SHEET_GAP) + 'px';
+}
+
+function reflowPushed(dragged) {
+  const sheetObj = state.spec.sheets[0];
+  for (const o of sheetObj.objects) {
+    if (o === dragged) continue;
+    const overlap = dragged.col < o.col + o.colspan && o.col < dragged.col + dragged.colspan &&
+      dragged.row < o.row + o.rowspan && o.row < dragged.row + dragged.rowspan;
+    if (overlap) {
+      o.row = dragged.row + dragged.rowspan;
+      const el = document.getElementById('dg-tile-' + o.col + '-' + o.row + '-' + o.type);
+      if (el) updateTileEl(el, o);
+    }
+  }
+  updateSheetHeight();
+}
+
+function updateSheetHeight() {
+  const sheetObj = state.spec.sheets[0];
+  const maxY = Math.max(4, ...sheetObj.objects.map(o => o.row + o.rowspan));
+  document.getElementById('dg-sheet').style.minHeight = (maxY * (SHEET_ROWH + SHEET_GAP) + SHEET_GAP) + 'px';
+}
+
+function renderEditor(spec, pd) {
+  const sheet = document.getElementById('dg-sheet');
+  sheet.innerHTML = '<div class="dg-ghost" id="dg-sheet-ghost"></div>';
+  if (!pd) {
+    // первый проход: каркас плиток, затем догружаем агрегаты и перерисовываем тела
+    pd = { groups: {}, sample: [], fields: [], kpiValues: {}, scatterPoints: {} };
+    previewDataFor(spec).then(data => {
+      state.previewData = data;
+      renderEditor(spec, data);
+    }).catch(e => {
+      const note = document.getElementById('dg-layout-note');
+      if (note) note.textContent = 'Предпросмотр недоступен: ' + e.message;
+    });
+  }
+  const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
+  specObjectCells(spec).forEach(({ o, si, oi }) => {
+    const el = document.createElement('div');
+    el.className = 'dg-tile' + (CHART_TYPES.includes(o.type) ? ' chart' : '') + (o.type === 'kpi' ? ' kpi' : '');
+    el.id = 'dg-tile-' + o.col + '-' + o.row + '-' + o.type + '-' + oi;
+    el.dataset.si = si; el.dataset.oi = oi;
+    updateTileEl(el, o);
+    el.innerHTML =
+      '<div class="dg-tile-head"><span class="grip">⠿</span><span class="ht">' + esc(o.title || o.field || o.measure || o.type) + '</span><span class="rs" title="Изменить размер"></span></div>' +
+      '<div class="dg-tile-body"></div>';
+    sheet.appendChild(el);
+    const body = el.querySelector('.dg-tile-body');
+    if (CHART_TYPES.includes(o.type)) {
+      body.innerHTML = renderedChartSVG(o, spec, pd);
+    } else if (o.type === 'kpi') {
+      body.innerHTML = '<div class="kpi-value">' + esc(fmtCompact((pd.kpiValues || {})[o.measure])) + '</div><div class="kpi-sub">' + esc(measById[o.measure]?.title || '') + '</div>';
+    } else if (o.type === 'table' && pd.sample && pd.fields) {
+      const head = pd.fields.map(f => '<th>' + esc(f) + '</th>').join('');
+      const bodyRows = pd.sample.slice(0, 5).map(r => '<tr>' + pd.fields.map((f, i) => '<td>' + esc(String(r[i])) + '</td>').join('') + '</tr>').join('');
+      body.innerHTML = '<table class="dg-table" style="font-size:10px;"><thead><tr>' + head + '</tr></thead><tbody>' + bodyRows + '</tbody></table>';
+    } else if (o.type === 'listbox' && pd.fields) {
+      body.innerHTML = '<div class="dg-chips" style="gap:4px;">' + pd.fields.slice(0, 3).map(f => '<span class="dg-chip" style="font-size:10px;padding:2px 8px;">' + esc(f) + '</span>').join('') + '</div>';
+    }
+    const head = el.querySelector('.dg-tile-head');
+    head.addEventListener('pointerdown', e => { if (layoutEdited) startSheetDrag(e, o, el); });
+    const rs = el.querySelector('.rs');
+    rs.addEventListener('pointerdown', e => { if (layoutEdited) { e.stopPropagation(); startSheetResize(e, o, el); } });
+  });
+  updateSheetHeight();
+  icons();
+}
+
+function startSheetDrag(e, o, el) {
+  e.preventDefault();
+  const rect = sheetRect();
+  sheetDrag = { o, el, sx: e.clientX, sy: e.clientY, c0: o.col, r0: o.row, cellW: rect.width / SHEET_COLS, cellH: SHEET_ROWH + SHEET_GAP };
+  el.style.zIndex = 9; el.style.opacity = '0.8'; el.style.transition = 'none';
+  const ghost = document.getElementById('dg-sheet-ghost');
+  ghost.style.display = 'block';
+  updateGhost(o);
+  window.addEventListener('pointermove', sheetDragMove);
+  window.addEventListener('pointerup', sheetDragUp, { once: true });
+}
+function updateGhost(o) {
+  const ghost = document.getElementById('dg-sheet-ghost');
+  updateTileEl(ghost, o);
+}
+function sheetDragMove(e) {
+  if (!sheetDrag) return;
+  const { o, el, sx, sy, c0, r0, cellW, cellH } = sheetDrag;
+  el.style.transform = 'translate(' + (e.clientX - sx) + 'px,' + (e.clientY - sy) + 'px)';
+  o.col = Math.max(0, Math.min(SHEET_COLS - o.colspan, c0 + Math.round((e.clientX - sx) / cellW)));
+  o.row = Math.max(0, r0 + Math.round((e.clientY - sy) / cellH));
+  updateGhost(o);
+}
+function sheetDragUp() {
+  window.removeEventListener('pointermove', sheetDragMove);
+  if (!sheetDrag) return;
+  const { o, el } = sheetDrag;
+  el.style.transform = ''; el.style.zIndex = ''; el.style.opacity = ''; el.style.transition = '';
+  document.getElementById('dg-sheet-ghost').style.display = 'none';
+  reflowPushed(o);
+  sheetDrag = null;
+  markLayoutEdited();
+  renderEditor(state.spec); // перерисовка с новыми координатами
+}
+
+function startSheetResize(e, o, el) {
+  e.preventDefault();
+  const rect = sheetRect();
+  sheetRsz = { o, el, sx: e.clientX, sy: e.clientY, w0: o.colspan, h0: o.rowspan, cellW: rect.width / SHEET_COLS, cellH: SHEET_ROWH + SHEET_GAP };
+  el.style.zIndex = 9; el.style.transition = 'none';
+  window.addEventListener('pointermove', sheetResizeMove);
+  window.addEventListener('pointerup', sheetResizeUp, { once: true });
+}
+function sheetResizeMove(e) {
+  if (!sheetRsz) return;
+  const { o, el, sx, sy, w0, h0, cellW, cellH } = sheetRsz;
+  const min = MIN_SIZE[o.type] || [2, 2];
+  o.colspan = Math.max(min[0], Math.min(Math.round((e.clientX - sx) / cellW) + w0, SHEET_COLS - o.col));
+  o.rowspan = Math.max(min[1], Math.min(Math.round((e.clientY - sy) / cellH) + h0, 12 - o.row));
+  updateTileEl(el, o);
+  reflowPushed(o);
+}
+function sheetResizeUp() {
+  window.removeEventListener('pointermove', sheetResizeMove);
+  sheetRsz = null;
+  markLayoutEdited();
+  renderEditor(state.spec);
+}
+
+function markLayoutEdited() {
+  layoutEdited = true;
+  state.specName = null;
+  state.specHash = null;
+  state.specChecked = true;
+  state.built = false;
+  state.published = false;
+  $('#dg-spec-view').textContent = JSON.stringify(state.spec, null, 2);
+  $('#dg-top-spec').textContent = state.spec.appName + ' (раскладка изменена)';
+  $('#dg-build-spec-name').textContent = state.spec.appName + ' (раскладка изменена)';
+  $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
+  const rec = document.getElementById('dg-save-spec-note');
+  if (rec) rec.style.display = 'flex';
+  refreshGuides();
+  updateApprovalBadge();
+}
+
+$('#dg-btn-save-layout').addEventListener('click', () => {
+  layoutEdited = false;
+  state.specChecked = true;
+  refreshGuides();
+  updateApprovalBadge();
+  $('#dg-layout-note').textContent = 'Раскладка записана в spec (в памяти). Пересоберите черновик — и утвердите заново при публикации.';
+});
+
+// ── правка макета словами (SSE, живой прогресс) ──
 
 // ── правка макета словами (SSE, живой прогресс) ──
 $('#dg-btn-patch').addEventListener('click', async () => {
@@ -696,7 +793,7 @@ $('#dg-btn-patch').addEventListener('click', async () => {
     $('#dg-top-spec').textContent = r.spec.appName + ' (изменён)';
     $('#dg-build-spec-name').textContent = r.spec.appName + ' (изменён, не сохранён)';
     $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
-    renderLayout(r.spec);
+    renderEditor(r.spec);
     logEl.textContent += '\nМакет обновлён. Пересоберите черновик на вкладке «Сборка и проверка».';
     setStatus('dg-st-spec', '✓');
   } catch (e) {
@@ -994,6 +1091,21 @@ function shareHistoryRender() {
   };
 }
 
+$('#dg-btn-layout-edit').addEventListener('click', () => {
+  layoutEdited = !layoutEdited;
+  document.getElementById('dg-sheet').classList.toggle('editing', layoutEdited);
+  $('#dg-btn-layout-edit').classList.toggle('is-on', layoutEdited);
+  $('#dg-btn-layout-edit').innerHTML = layoutEdited
+    ? '<i data-lucide="check" aria-hidden="true"></i>Готово'
+    : '<i data-lucide="move" aria-hidden="true"></i>Правка раскладки';
+  $('#dg-btn-save-layout').classList.toggle('dg-hidden', !layoutEdited);
+  $('#dg-layout-edit-hint').textContent = layoutEdited
+    ? 'Тяните плитки за заголовок, размер — за зелёный угол.'
+    : 'Включите правку — плитки станут перетаскиваемыми.';
+  if (state.spec) renderEditor(state.spec);
+  icons();
+});
+
 $('#dg-btn-profile-share').addEventListener('click', () => {
   if (!share.selected) return;
   // повторное профилирование (например, файл обновился на шаре)
@@ -1030,7 +1142,7 @@ $('#dg-btn-gen-share').addEventListener('click', async () => {
     $('#dg-top-spec').textContent = r.spec.appName;
     $('#dg-build-spec-name').textContent = r.spec.appName + ' (excel: ' + share.selected + ')';
     setStatus('dg-st-spec', '✓');
-    renderLayout(r.spec);
+    renderEditor(r.spec);
   } catch (e) {
     progressStop(false);
     logEl.classList.add('is-err');

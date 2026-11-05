@@ -185,3 +185,23 @@ body { margin: 0; background: var(--dg-bg, #eef1f6); display: flex; justify-cont
 .dg-grid .gcell .kpi-sub { font-size: 10px; color: var(--dg-mut); }
 .dg-grid .gcell .kpi-loading { font-size: 16px; color: var(--dg-mut); }
 .dg-grid-rendered .gcell .t { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* редактор раскладки */
+.dg-sheet { position: relative; background: var(--dg-panel2); border: 1px solid var(--dg-line); border-radius: 10px; overflow: hidden; min-height: 320px; }
+.dg-sheet.editing { background-image: radial-gradient(circle, color-mix(in srgb, var(--dg-ink) 6%, transparent) 1px, transparent 1px); background-size: 16px 16px; }
+.dg-tile { position: absolute; background: var(--dg-panel); border: 1px solid var(--dg-line); border-radius: 8px; overflow: hidden; transition: left .16s, top .16s, width .16s, height .16s; }
+.dg-tile.chart, .dg-tile.kpi { border-color: color-mix(in srgb, var(--dg-acc) 30%, var(--dg-line)); }
+.dg-tile-head { display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-bottom: 1px solid var(--dg-line); font-size: 10.5px; color: var(--dg-mut); background: var(--dg-panel); user-select: none; }
+.dg-tile-head .grip { font-size: 9px; letter-spacing: 1px; }
+.dg-tile-head .ht { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dg-sheet.editing .dg-tile-head { background: color-mix(in srgb, var(--dg-acc) 12%, var(--dg-panel)); color: var(--dg-acc); cursor: grab; }
+.dg-sheet.editing .dg-tile-head:active { cursor: grabbing; }
+.dg-tile-head .rs { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; opacity: 0; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--dg-acc) 50%); border-radius: 0 0 7px 0; transition: opacity .15s; }
+.dg-sheet.editing .dg-tile-head .rs { opacity: 0.9; }
+.dg-tile-head .rs:hover { opacity: 1; }
+.dg-tile-body { padding: 6px 8px; }
+.dg-tile-body .kpi-value { font-size: 24px; font-weight: 600; color: var(--dg-acc); }
+.dg-tile-body .kpi-sub { font-size: 10px; color: var(--dg-mut); }
+.dg-tile-body svg { width: 100%; height: auto; display: block; }
+.dg-tile-body table { width: 100%; }
+.dg-sheet .dg-ghost { position: absolute; display: none; border: 2px dashed var(--dg-acc); border-radius: 8px; background: color-mix(in srgb, var(--dg-acc) 12%, transparent); pointer-events: none; z-index: 5; }

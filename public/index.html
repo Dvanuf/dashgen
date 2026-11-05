@@ -166,23 +166,32 @@
 
       <!-- Макет -->
       <section class="dg-panel" id="dg-p-layout" hidden>
-        <h2 class="dg-h">Макет из спецификации</h2>
-        <p class="dg-sub" style="margin-bottom:10px;">Сетка 24×12, как в Qlik. Раскладку задают col/row/colspan/rowspan в spec.</p>
-        <ol class="dg-guide" id="dg-guide-layout">
-          <li data-ok="spec"><b>Откройте spec</b> на шаге «Спецификация» (макет рисуется отсюда)</li>
-          <li>Просмотрите раскладку ниже; при необходимости — <b>правка словами</b> в строке под макетом</li>
-          <li><b>Пересоберите черновик</b> (вкладка «Сборка и проверка») — раскладка применилась в Qlik</li>
-        </ol>
-        <div class="dg-warnstrip"><i data-lucide="flask-conical" aria-hidden="true"></i>Предпросмотр раскладки · точный вид с данными — после сборки в Qlik</div>
-        <div id="dg-layout-out"></div>
+        <h2 class="dg-h">Макет листа (редактор)</h2>
+        <p class="dg-sub" style="margin-bottom:10px;">Дизайн предложил ИИ по структуре данных. Включите правку — тяните плитки за заголовок, размер — за зелёный угол; соседи переезжают вниз, перекрытий нет.</p>
+        <div class="dg-rowbtn" style="margin:-4px 0 12px;">
+          <button class="dg-btn" id="dg-btn-layout-edit" type="button"><i data-lucide="move" aria-hidden="true"></i>Правка раскладки</button>
+          <button class="dg-btn dg-btn--p dg-hidden" id="dg-btn-save-layout" type="button"><i data-lucide="save" aria-hidden="true"></i>Записать в spec</button>
+          <span class="dg-note" id="dg-layout-edit-hint">Включите правку — плитки станут перетаскиваемыми.</span>
+        </div>
+        <div class="dg-warnstrip"><i data-lucide="flask-conical" aria-hidden="true"></i>Отрисовка — эскиз с условными значениями · точный вид — в черновике Qlik</div>
+        <div class="dg-sheet" id="dg-sheet"></div>
+        <div class="dg-rowbtn" id="dg-save-spec-note" style="display:none;">
+          <span class="dg-badge dg-badge--warn">раскладка изменена — черновик нужно пересобрать и утвердить заново</span>
+        </div>
+        <p class="dg-note" id="dg-layout-note" style="margin:8px 0 0;">Правка меняет col/row/colspan/rowspan в spec. Сетка и перекрытия проверяются валидатором.</p>
         <div class="dg-card" style="margin-top:12px;">
-          <p class="dg-cardtitle"><i data-lucide="pen-line" aria-hidden="true"></i>Правка макета словами (ИИ)</p>
-          <div class="dg-rowbtn" style="margin-top:0;">
-            <input class="dg-input" id="dg-patch-in" type="text" placeholder="Например: перенеси таблицу вниз на всю ширину, добавь KPI маржи справа от Заказов" style="flex:1;">
-            <button class="dg-btn dg-btn--p" id="dg-btn-patch" type="button"><i data-lucide="sparkles" aria-hidden="true"></i>Применить правку</button>
+          <p class="dg-cardtitle"><i data-lucide="repeat" aria-hidden="true"></i>Как меняется дашборд <span class="dg-note" style="margin-left:auto;font-weight:400;">spec.json — единственный контракт</span></p>
+          <div class="dg-flow">
+            <span class="dg-flowstep"><span class="dg-fnum">1</span>Правка (мышью или словами)</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep is-ai"><span class="dg-fnum">2</span>spec обновлён</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">3</span>Валидатор</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">4</span>Черновик пересобран</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">5</span>Утверждение</span>
           </div>
-          <pre class="dg-code dg-hidden" id="dg-patch-log"></pre>
-          <p class="dg-note" style="margin:8px 0 0;">Правка меняет spec (сетка и перекрытия проверяются валидатором); после правки пересоберите черновик — и утвердите заново при публикации.</p>
         </div>
       </section>
 
@@ -274,7 +283,7 @@
 
   <footer class="dg-foot">Данные не покидают контур · ИИ получает только профиль · spec.json — контракт между ИИ и сборкой</footer>
 </div>
-<script src="https://unpkg.com/lucide@0.462.0/dist/umd/lucide.min.js"></script>
-<script src="app.js"></script>
+<script src="lucide.min.js"></script>
+<script src="main.js?v=031"></script>
 </body>
 </html>
