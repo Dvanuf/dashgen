@@ -310,7 +310,13 @@ async function streamGenerate(req, res, url) {
     const aiCfg = (CFG && CFG.ai) || null;
     if (!aiCfg) { emit({ type: 'error', message: 'В config.json нет блока ai (provider/baseUrl/model)' }); return res.end(); }
     const { generateSpec } = require('./src/ai/generate-spec');
-    const r = await generateSpec({ safeProfile: profile, description: String(body.description), aiCfg, log: l => emit({ type: 'log', text: String(l) }) });
+    const r = await generateSpec({
+      safeProfile: profile,
+      description: String(body.description),
+      aiCfg,
+      excelLib: body.excelLib ? String(body.excelLib) : null,
+      log: l => emit({ type: 'log', text: String(l) })
+    });
     privacy.journal(profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
     emit({ type: 'log', text: 'Отправка профиля записана в журнал (logs/privacy-send.jsonl)' });
     emit({ type: 'done', spec: r.spec, attempts: r.attempts });

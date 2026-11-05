@@ -551,6 +551,47 @@ $('#dg-btn-publish').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
+// ── реальный Excel с шары Qlik ──
+$('#dg-btn-gen-excel').addEventListener('click', async () => {
+  const btn = $('#dg-btn-gen-excel'), logEl = $('#dg-ai-log');
+  const file = $('#dg-excel-file').value.trim();
+  const sheet = $('#dg-excel-sheet').value.trim();
+  if (!file) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Укажите имя файла на шаре.'; return; }
+  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте источник (лучше тот же файл).'; return; }
+  // переходим на «Спецификацию», где видно лог и результат
+  navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === 'spec'));
+  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-spec'; });
+  btn.disabled = true;
+  const excelLib = 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + file;
+  progressStart(logEl, 'Отправляю профиль модели (режим реального Excel)…');
+  try {
+    const r = await apiStream('/api/generate-spec', {
+      profile: state.safeProfile,
+      description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
+      excelLib
+    }, text => {
+      progressPhase('Модель формирует spec с excel-источником…');
+      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+    });
+    progressStop(true);
+    state.spec = r.spec;
+    state.specName = null;
+    state.specHash = null;
+    state.specChecked = true;
+    state.built = false;
+    state.published = false;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName;
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (excel: ' + file + ')';
+    setStatus('dg-st-spec', '✓');
+    renderLayout(r.spec);
+  } catch (e) {
+    progressStop(false);
+    logEl.classList.add('is-err');
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+  } finally { btn.disabled = false; refreshGuides(); icons(); }
+});
+
 // ── старт ──
 (async () => {
   await loadConfig();

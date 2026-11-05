@@ -6,31 +6,40 @@
 const { chat, extractJson } = require('./provider');
 const { validateSpec } = require('../spec-validator');
 
-const SYSTEM = [
+// Системный промпт зависит от режима: синтетика inline или реальный Excel с шары.
+const buildSystem = excelLib => [
   'Ты проектируешь дашборды Qlik Sense. Тебе дают безопасный профиль данных (имена колонок, типы, кардинальность — БЕЗ значений) и описание отчёта.',
   'Верни ТОЛЬКО spec.json по JSON-схеме Dashgen v1, без пояснений.',
   'Схема spec v1 (обязательные поля):',
   '{ "version": 1, "appName": "...", "description": "...",',
-  '  "source": {тип из профиля}, "measures": [...], "dimensions": [...], "sheets": [...] }',
-  'Правила:',
-  '- source: inline → {type:"inline", table, fields, rows} — строки по полям, значения правдоподобные синтетические.',
-  '- excel/qvd профиль: пока доставка lib:// не настроена, ВСЕГДА используй type:"inline" с синтетическими строками (не более 15), поля — точные имена колонок из профиля. В description добавь пометку «синтетические данные». Не используй lib:// пути.',
+  '  "source": {тип источника}, "measures": [...], "dimensions": [...], "sheets": [...] }',
+  excelLib
+    ? 'Правило источника (РЕАЛЬНЫЙ EXCEL): source строго {"type":"excel","path":"' + excelLib + '","sheet":"<точное имя листа из профиля>"}. НЕ используй inline и синтетику: данные загрузит Qlik из файла. fields не указывай (LOAD * всех колонок).'
+    : [
+        'Правила источника (СИНТЕТИЧЕСКИЙ РЕЖИМ, lib:// недоступен):',
+        '- inline → {type:"inline", table, fields, rows} — строки по полям, значения правдоподобные синтетические, не более 15 строк.',
+        '- excel/qvd профиль: ВСЕГДА используй type:"inline" с синтетическими строками; НЕ используй lib:// пути. В description добавь пометку «синтетические данные».'
+      ],
   '- measures: id латиницей, title по-русски, formula — выражение Qlik (Sum(...), Count(DISTINCT ...), деление для средних). Учитывай типы колонок из профиля: меры — по числовым, измерения — по текстовым и датам.',
   '- dimensions: id латиницей, title по-русски, field — точное имя колонки из профиля.',
-  '- sheets: 1 лист «Обзор»; objects: 3-4 kpi сверху (col 4..19, row 0, rowspan 3), linechart/barchart (row 3), table (row 7, rowspan 5); listbox слева (col 0). Сетка 24×12: col 0-23, row 0-11.',
+  '- sheets: 1 лист «Обзор»; objects: 3-4 kpi сверху (col 4..19, row 0, rowspan 3), linechart/barchart (row 3), table (row 7, rowspan 5); listbox слева (col 0). Сетка 24×12: col 0-23, row 0-11. У каждого объекта должны быть col и row.',
   '- Каждый объект ссылается ТОЛЬКО на существующие id мер/измерений.',
   '- Не выдумывай поля, которых нет в профиле. Формулы используй только по существующим колонкам.'
-].join('\n');
+].filter(Boolean).join('\n');
 
-// buildPrompt(safeProfile, description) — пользовательский запрос
-function buildPrompt(safeProfile, description) {
+const SYSTEM = buildSystem(null); // режим по умолчанию (синтетика)
+
+// buildPrompt(safeProfile, description, excelLib) — пользовательский запрос.
+// excelLib — путь lib:// к реальному файлу на шаре: тогда источник excel, не inline.
+function buildPrompt(safeProfile, description, excelLib) {
   return [
     'Описание отчёта от пользователя:',
     description,
     '',
     'Безопасный профиль данных (значений нет):',
-    JSON.stringify(safeProfile, null, 2)
-  ].join('\n');
+    JSON.stringify(safeProfile, null, 2),
+    excelLib ? '\nРежим данных: РЕАЛЬНЫЙ EXCEL на шаре Qlik. source обязателен вида: {"type":"excel","path":"' + excelLib + '","sheet":"<имя листа профиля>"} — НЕ inline, синтетику не придумывай.' : ''
+  ].filter(Boolean).join('\n');
 }
 
 // repairPrompt(spec, errors) — запрос исправления
@@ -45,14 +54,14 @@ function repairPrompt(spec, errors) {
   ].join('\n');
 }
 
-// generateSpec({safeProfile, description, aiCfg, log}) → {spec, attempts}
-async function generateSpec({ safeProfile, description, aiCfg, log = () => {} }) {
+// generateSpec({safeProfile, description, aiCfg, excelLib, log}) → {spec, attempts}
+async function generateSpec({ safeProfile, description, aiCfg, excelLib, log = () => {} }) {
   const maxAttempts = 3;
   let spec = null;
-  let prompt = buildPrompt(safeProfile, description);
+  let prompt = buildPrompt(safeProfile, description, excelLib);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log('Попытка ' + attempt + ' из ' + maxAttempts + ': запрос к модели…');
-    const text = await chat(aiCfg, SYSTEM, prompt);
+    const text = await chat(aiCfg, buildSystem(excelLib), prompt);
     try {
       spec = extractJson(text);
     } catch (e) {
