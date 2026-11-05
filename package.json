@@ -7,12 +7,16 @@
   "scripts": {
     "build": "node cli.js build examples/spec-sales-inline.json",
     "check": "node cli.js check examples/spec-sales-inline.json",
-    "ui": "node server.js"
+    "ui": "node server.js",
+    "app": "electron desktop/main.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",
     "enigma.js": "^2.15.0",
     "ws": "^8.18.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3"
   }
 }
