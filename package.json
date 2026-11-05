@@ -1,6 +1,6 @@
 {
   "name": "dashgen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Сборка дашбордов Qlik Sense из Excel с ИИ",
   "private": true,
   "main": "desktop/main.js",
@@ -8,7 +8,8 @@
     "build": "node cli.js build examples/spec-sales-inline.json",
     "check": "node cli.js check examples/spec-sales-inline.json",
     "ui": "node server.js",
-    "app": "electron desktop/main.js"
+    "app": "electron desktop/main.js",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",
