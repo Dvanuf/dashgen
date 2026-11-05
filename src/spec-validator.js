@@ -22,7 +22,11 @@ function validateSpec(spec) {
   const QLIK_WORDS = new Set(['sum', 'count', 'distinct', 'avg', 'min', 'max', 'only', 'if', 'aggr', 'num', 'date', 'month', 'year', 'quarter', 'week', 'day', 'floor', 'ceil', 'round', 'upper', 'lower', 'left', 'right', 'len', 'trim', 'and', 'or', 'not', 'total', 'above', 'stdev', 'frac', 'rank']);
   const stripLiterals = s => String(s || '').replace(/'[^']*'|"[^"]*"/g, "''");
   if (spec && typeof spec === 'object' && spec.source && spec.source.type === 'inline') {
-    const fields = new Set((spec.source.fields || []).map(f => String(f).toLowerCase()));
+    if (!Array.isArray(spec.source.fields)) {
+      // модель иногда возвращает fields строкой «A, B» — валидатор не должен падать, а объяснить модели
+      errors.push('source.fields должен быть массивом строк (например ["Отв", "Период"]), а не ' + typeof spec.source.fields);
+    }
+    const fields = new Set(Array.isArray(spec.source.fields) ? spec.source.fields.map(f => String(f).toLowerCase()) : []);
     const checkFormula = (title, id, formula) => {
       const clean = stripLiterals(formula);
       const bracket = new Set((clean.match(/\[([^\]]+)\]/g) || []).map(b => b.slice(1, -1).toLowerCase()));
@@ -44,8 +48,8 @@ function validateSpec(spec) {
 
   // Проверка ссылок: каждый id в объектах должен существовать в measures/dimensions
   if (spec && typeof spec === 'object') {
-    const meaIds = new Set((spec.measures || []).map(m => m.id));
-    const dimIds = new Set((spec.dimensions || []).map(d => d.id));
+    const meaIds = new Set((Array.isArray(spec.measures) ? spec.measures : []).map(m => m.id));
+    const dimIds = new Set((Array.isArray(spec.dimensions) ? spec.dimensions : []).map(d => d.id));
     (spec.sheets || []).forEach(sheet => (sheet.objects || []).forEach((o, i) => {
       const at = `sheet «${sheet.title}» объект #${i}`;
       if (o.type === 'kpi' && o.measure && !meaIds.has(o.measure)) errors.push(at + ': неизвестная мера «' + o.measure + '»');

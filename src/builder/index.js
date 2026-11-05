@@ -13,10 +13,14 @@ async function diagnoseReloadFailure(app, spec) {
     for (const f of (res && res.qFields) || []) present.add(String(f.qName).toLowerCase());
   } catch (_) { /* модель пуста — не критично для диагноза */ }
   const needed = new Set();
+  const QLIK_WORDS = new Set(['sum', 'count', 'distinct', 'avg', 'min', 'max', 'only', 'if', 'aggr', 'num', 'date', 'month', 'year', 'quarter', 'week', 'day', 'floor', 'ceil', 'round', 'and', 'or', 'not', 'total']);
   const addFromFormula = text => {
     const clean = String(text || '').replace(/'[^']*'|"[^"]*"/g, "''");
     for (const b of clean.match(/\[([^\]]+)\]/g) || []) needed.add(b.slice(1, -1).toLowerCase());
-    for (const id of clean.match(/[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*/g) || []) needed.add(id.toLowerCase());
+    for (const id of clean.match(/[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*/g) || []) {
+      const lid = id.toLowerCase();
+      if (!QLIK_WORDS.has(lid)) needed.add(lid); // функции Qlik (sum, count…) — не поля, шум из диагноза убираем
+    }
   };
   for (const m of spec.measures || []) addFromFormula(m.formula);
   for (const d of spec.dimensions || []) if (d.field) needed.add(String(d.field).toLowerCase());
