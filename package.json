@@ -36,6 +36,7 @@
       "spec/**",
       "examples/**",
       "desktop/**",
+      "templates/**",
       "config.json",
       "package.json"
     ],
