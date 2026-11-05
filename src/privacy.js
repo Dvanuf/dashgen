@@ -34,7 +34,7 @@ function makeSafeProfile(sourceProfile, options = {}) {
 
 // Журнал отправок: время, содержимое, адресат — хранится только локально (logs/ вне git)
 function journal(safeProfile, destination, logsDir) {
-  const dir = logsDir || path.join(__dirname, '..', 'logs');
+  const dir = logsDir || process.env.DASHGEN_DATA_DIR || path.join(__dirname, '..', 'logs');
   fs.mkdirSync(dir, { recursive: true });
   const line = JSON.stringify({
     at: new Date().toISOString(),

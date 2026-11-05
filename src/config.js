@@ -16,7 +16,9 @@ function expandPath(p) {
 }
 
 function loadConfig(configPath) {
-  const resolved = path.resolve(configPath || path.join(__dirname, '..', 'config.json'));
+  // В собранном .app конфиг ищем в userData (DASHGEN_CONFIG_DIR); в dev — в корне проекта
+  const defaultDir = process.env.DASHGEN_CONFIG_DIR || path.join(__dirname, '..');
+  const resolved = path.resolve(configPath || path.join(defaultDir, 'config.json'));
   if (!fs.existsSync(resolved)) {
     throw new Error('Конфиг не найден: ' + resolved + ' — создайте его из config.example.json');
   }

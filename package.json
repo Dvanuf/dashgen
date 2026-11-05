@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Сборка дашбордов Qlik Sense из Excel с ИИ",
   "private": true,
-  "main": "cli.js",
+  "main": "desktop/main.js",
   "scripts": {
     "build": "node cli.js build examples/spec-sales-inline.json",
     "check": "node cli.js check examples/spec-sales-inline.json",
@@ -17,6 +17,31 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "electron": "^45.2.3"
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "ru.itgri.dashgen",
+    "productName": "Dashgen",
+    "directories": {
+      "buildResources": "desktop/build",
+      "output": "dist"
+    },
+    "files": [
+      "server.js",
+      "cli.js",
+      "src/**",
+      "public/**",
+      "spec/**",
+      "examples/**",
+      "desktop/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dir",
+      "icon": "desktop/build/icon.png",
+      "category": "public.app-category.business",
+      "identity": null
+    }
   }
 }

@@ -9,10 +9,12 @@ const crypto = require('crypto');
 
 const PORT = 4748;
 const ROOT = __dirname;
+// В собранном .app код внутри asar (только чтение) — записываемое в DASHGEN_DATA_DIR
+const DATA = process.env.DASHGEN_DATA_DIR || ROOT;
 const PUBLIC = path.join(ROOT, 'public');
 const EXAMPLES = path.join(ROOT, 'examples');
-const TMP = path.join(ROOT, 'tmp');
-const LOGS = path.join(ROOT, 'logs');
+const TMP = path.join(DATA, 'tmp');
+const LOGS = path.join(DATA, 'logs');
 fs.mkdirSync(TMP, { recursive: true });
 fs.mkdirSync(LOGS, { recursive: true });
 
@@ -316,7 +318,9 @@ const api = {
     if (!CFG.ai) CFG.ai = {};
     if (baseUrl) CFG.ai.baseUrl = baseUrl;
     if (model) CFG.ai.model = model;
-    const cfgPath = path.join(ROOT, 'config.json');
+    const cfgPath = process.env.DASHGEN_CONFIG_DIR
+      ? path.join(process.env.DASHGEN_CONFIG_DIR, 'config.json')
+      : path.join(ROOT, 'config.json');
     const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     raw.ai = raw.ai || {};
     if (baseUrl) raw.ai.baseUrl = CFG.ai.baseUrl;

@@ -1,8 +1,8 @@
 // Dashgen Desktop (Electron): запускает локальный сервер server.js и открывает окно приложения.
 // Сервер слушает только 127.0.0.1 — наружу не доступен; при закрытии окна сервер останавливается.
 const { app, BrowserWindow, shell } = require('electron');
-const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const net = require('net');
 
 const PORT = 4748;
@@ -28,18 +28,23 @@ function serverReady(timeoutMs = 15000) {
 }
 
 function startServer() {
-  // Если порт уже занят (например, сервер запущен вручную) — используем его и не плодим второй
+  // Если порт уже занят (например, сервер запущен вручную) — используем его и не плодим второй.
+  // Иначе поднимаем сервер В ПРОЦЕССЕ Electron: require исполняет server.js как модуль main-процесса
+  // (в собранном .app spawn внешнего node невозможен — код внутри app.asar).
   return new Promise(resolve => {
     const probe = net.createConnection({ host: '127.0.0.1', port: PORT });
     probe.on('connect', () => { probe.destroy(); resolve(false); });
     probe.on('error', () => {
       probe.destroy();
-      serverProc = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
-        cwd: ROOT,
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-      serverProc.stdout.on('data', d => process.stdout.write('[server] ' + d));
-      serverProc.stderr.on('data', d => process.stderr.write('[server] ' + d));
+      const userData = app.getPath('userData'); // ~/Library/Application Support/Dashgen — единственное место, доступное на запись в packaged
+      process.env.DASHGEN_DATA_DIR = userData;
+      // config.json в packaged берём из userData; в dev — из корня проекта (server.js знает ROOT)
+      process.env.DASHGEN_CONFIG_DIR = userData;
+      if (!fs.existsSync(path.join(userData, 'config.json'))) {
+        const devConfig = path.join(ROOT, 'config.json');
+        if (fs.existsSync(devConfig)) fs.copyFileSync(devConfig, path.join(userData, 'config.json'));
+      }
+      require(path.join(ROOT, 'server.js'));
       resolve(true);
     });
   });
@@ -76,6 +81,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (serverProc) { try { serverProc.kill(); } catch (_) {} }
   app.quit();
 });
