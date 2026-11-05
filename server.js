@@ -98,7 +98,12 @@ function readLogLines(file) {
 }
 
 // Последний профилированный источник: переживает перезагрузку страницы (F5)
+// и перезапуск приложения — хранится в userData/last-profile.json
+const LAST_PROFILE_FILE = path.join(DATA, 'last-profile.json');
 let lastProfile = null;
+try {
+  if (fs.existsSync(LAST_PROFILE_FILE)) lastProfile = JSON.parse(fs.readFileSync(LAST_PROFILE_FILE, 'utf8'));
+} catch (_) { lastProfile = null; }
 
 function profileFile(fp, url) {
   const type = fp.toLowerCase().endsWith('.qvd') ? 'qvd' : 'excel';
@@ -119,6 +124,7 @@ function profileFile(fp, url) {
       excelLib = 'lib://' + (cfgShare.connection || 'Рабочие_папки_разработчиков') + '/' + userDir + '/' + rel;
     }
     lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString(), excelLib, localPath: resolved };
+    try { fs.writeFileSync(LAST_PROFILE_FILE, JSON.stringify(lastProfile)); } catch (_) {}
     return [200, { sourceProfile, safeProfile, file: lastProfile.file, at: lastProfile.at, excelLib }];
   } catch (e) {
     return [400, { error: e.message }];
