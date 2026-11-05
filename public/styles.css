@@ -145,4 +145,12 @@ body { margin: 0; background: var(--dg-bg, #eef1f6); }
 .dg-grid .gcell .ph { height: calc(100% - 30px); margin-top: 4px; border-radius: 4px; background: repeating-linear-gradient(45deg, transparent, transparent 6px, color-mix(in srgb, var(--dg-acc) 7%, transparent) 6px, color-mix(in srgb, var(--dg-acc) 7%, transparent) 12px); }
 
 .dg-foot { padding: 8px 16px; border-top: 1px solid var(--dg-line); background: var(--dg-panel2); font-size: 11px; color: var(--dg-mut); flex-wrap: wrap; display: flex; gap: 8px; }
+/* маршрут этапа: нумерованный чек-лист */
+.dg-guide { margin: 0 0 14px; padding: 10px 14px 10px 34px; background: var(--dg-panel2); border: 1px solid var(--dg-line); border-radius: 10px; font-size: 12.3px; color: var(--dg-mut); }
+.dg-guide li { margin: 3px 0; }
+.dg-guide li::marker { color: var(--dg-acc); font-weight: 600; }
+.dg-guide li.is-done { color: var(--dg-ok); }
+.dg-guide b { color: var(--dg-ink); font-weight: 600; }
+.dg-guide li.is-done b { color: var(--dg-ok); }
+
 .dg-hidden { display: none !important; }

@@ -45,6 +45,11 @@
       <!-- Источник -->
       <section class="dg-panel" id="dg-p-source">
         <h2 class="dg-h">Источник данных</h2>
+        <ol class="dg-guide" id="dg-guide-source">
+          <li>Выберите файл: <b>путь на этом Mac</b> или загрузка из браузера</li>
+          <li>Нажмите <b>«Профилировать»</b> — обязательное действие этого этапа</li>
+          <li>Дальше: шаг «Приватность» (он проходится автоматически)</li>
+        </ol>
         <p class="dg-sub">Адаптеры: Excel и QVD. Профиль строится локально, значения не покидают эту машину.</p>
         <div class="dg-chips" style="margin-bottom:14px;">
           <button class="dg-chip is-on" data-src="path" type="button"><i data-lucide="folder-open" aria-hidden="true"></i>Путь на этом Mac</button>
@@ -93,6 +98,11 @@
       <!-- Спецификация -->
       <section class="dg-panel" id="dg-p-spec" hidden>
         <h2 class="dg-h">Спецификация (spec.json)</h2>
+        <ol class="dg-guide" id="dg-guide-spec">
+          <li>Получите spec: <b>сгенерировать ИИ</b> из профиля по описанию <i>или</i> открыть существующий из списка</li>
+          <li>Нажмите <b>«Проверить схему»</b> — spec должен пройти валидацию (или сборка откажет)</li>
+          <li>Дальше: вкладка «Макет» — просмотр/правки, затем «Сборка и проверка»</li>
+        </ol>
         <p class="dg-sub">Единственный контракт между вами, ИИ и сборщиком. Схема v1: блок sources, меры, измерения, листы 24×12.</p>
         <div class="dg-grid2 dg-grid2--wide">
           <div class="dg-card">
@@ -138,30 +148,33 @@
       <!-- Макет -->
       <section class="dg-panel" id="dg-p-layout" hidden>
         <h2 class="dg-h">Макет из спецификации</h2>
-        <p class="dg-sub" style="margin-bottom:10px;">Сетка 24×12, как в Qlik. Раскладку задают col/row/colspan/rowspan; архетипы листов — этап «Дизайн-система».</p>
+        <p class="dg-sub" style="margin-bottom:10px;">Сетка 24×12, как в Qlik. Раскладку задают col/row/colspan/rowspan в spec.</p>
+        <ol class="dg-guide" id="dg-guide-layout">
+          <li data-ok="spec"><b>Откройте spec</b> на шаге «Спецификация» (макет рисуется отсюда)</li>
+          <li>Просмотрите раскладку ниже; при необходимости — <b>правка словами</b> в строке под макетом</li>
+          <li><b>Пересоберите черновик</b> (вкладка «Сборка и проверка») — раскладка применилась в Qlik</li>
+        </ol>
         <div class="dg-warnstrip"><i data-lucide="flask-conical" aria-hidden="true"></i>Предпросмотр раскладки · точный вид с данными — после сборки в Qlik</div>
         <div id="dg-layout-out"></div>
         <div class="dg-card" style="margin-top:12px;">
-          <p class="dg-cardtitle"><i data-lucide="repeat" aria-hidden="true"></i>Как меняется дашборд <span class="dg-note" style="margin-left:auto;font-weight:400;">spec.json — единственный контракт; интерфейс и Qlik руками не правятся</span></p>
-          <div class="dg-flow">
-            <span class="dg-flowstep"><span class="dg-fnum">1</span>Правка словами</span>
-            <span class="dg-flarrow">→</span>
-            <span class="dg-flowstep is-ai"><span class="dg-fnum">2</span>ИИ готовит патч spec</span>
-            <span class="dg-flarrow">→</span>
-            <span class="dg-flowstep"><span class="dg-fnum">3</span>Валидатор</span>
-            <span class="dg-flarrow">→</span>
-            <span class="dg-flowstep"><span class="dg-fnum">4</span>Макет обновился</span>
-            <span class="dg-flarrow">→</span>
-            <span class="dg-flowstep"><span class="dg-fnum">5</span>Черновик пересобран</span>
-            <span class="dg-flarrow">→</span>
-            <span class="dg-flowstep"><span class="dg-fnum">6</span>Повторное утверждение</span>
+          <p class="dg-cardtitle"><i data-lucide="pen-line" aria-hidden="true"></i>Правка макета словами (ИИ)</p>
+          <div class="dg-rowbtn" style="margin-top:0;">
+            <input class="dg-input" id="dg-patch-in" type="text" placeholder="Например: перенеси таблицу вниз на всю ширину, добавь KPI маржи справа от Заказов" style="flex:1;">
+            <button class="dg-btn dg-btn--p" id="dg-btn-patch" type="button"><i data-lucide="sparkles" aria-hidden="true"></i>Применить правку</button>
           </div>
+          <pre class="dg-code dg-hidden" id="dg-patch-log"></pre>
+          <p class="dg-note" style="margin:8px 0 0;">Правка меняет spec (сетка и перекрытия проверяются валидатором); после правки пересоберите черновик — и утвердите заново при публикации.</p>
         </div>
       </section>
 
       <!-- Сборка -->
       <section class="dg-panel" id="dg-p-build" hidden>
         <h2 class="dg-h">Сборка и проверка</h2>
+        <ol class="dg-guide" id="dg-guide-build">
+          <li><b>«Собрать черновик в Qlik»</b> — обязательное действие; сборка сама проверяет схему</li>
+          <li>Дождитесь зелёного журнала и блока <b>verify</b>: «ошибок нет», строки совпадают</li>
+          <li>Проверьте черновик в <b>Hub → Work</b> глазами — и переходите к «Публикация»</li>
+        </ol>
         <p class="dg-sub">Черновик в личной области Work, виден автору. Повторная сборка заменяет приложение с тем же именем.</p>
         <div class="dg-rowbtn">
           <span class="dg-note">Spec:</span><b id="dg-build-spec-name">—</b>
@@ -175,6 +188,11 @@
       <!-- Публикация -->
       <section class="dg-panel" id="dg-p-publish" hidden>
         <h2 class="dg-h">Публикация</h2>
+        <ol class="dg-guide" id="dg-guide-publish">
+          <li>Черновик собран и проверен (шаг «Сборка»)</li>
+          <li>Впишите, <b>кто утвердил</b> → «Записать утверждение» — статус станет «утверждено», кнопка разблокируется</li>
+          <li>Выберите <b>стрим</b> → <b>«Опубликовать»</b> — приложение появится в стриме (видно потребителям)</li>
+        </ol>
         <p class="dg-sub">Замена опубликованной версии — только через журнал утверждений. Публикуется собранный и утверждённый черновик.</p>
         <div class="dg-grid2">
           <div class="dg-card">

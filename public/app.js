@@ -5,7 +5,23 @@ const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = () => { if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } }); };
 
-const state = { config: null, spec: null, specName: null, specHash: null, approvals: [], streams: [] };
+const state = { config: null, spec: null, specName: null, specHash: null, approvals: [], streams: [], specChecked: false, built: false, published: false };
+
+// ── маршруты этапов: подсветка выполненных пунктов ──
+function refreshGuides() {
+  const marks = {
+    'dg-guide-source': [!!state.safeProfile],
+    'dg-guide-spec': [!!state.spec, !!state.specChecked],
+    'dg-guide-layout': [!!state.spec, !!state.built],
+    'dg-guide-build': [!!state.built, !!(state.built && state.verifyOk)],
+    'dg-guide-publish': [!!state.built, currentSpecApproved(), !!state.published]
+  };
+  Object.entries(marks).forEach(([id, flags]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    [...el.children].forEach((li, i) => li.classList.toggle('is-done', !!flags[i]));
+  });
+}
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -47,7 +63,6 @@ async function loadConfig() {
       ['Учётная запись', cfg.userDirectory + '\\' + cfg.userId],
       ['ИИ-провайдер', cfg.ai ? cfg.ai.model + ' · ' + cfg.ai.baseUrl : 'не задан (блок ai в config.json)']
     ].map(r => '<tr><td style="color:var(--dg-mut);width:40%;">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('');
-    $('#dg-ai-model').textContent = cfg.ai && cfg.ai.model ? cfg.ai.model : 'не задан';
     setStatus('dg-st-conn', '✓');
   } catch (e) {
     $('#dg-cfg-chip').textContent = 'config.json не найден';
@@ -96,6 +111,7 @@ function renderProfile(data) {
   renderPrivacy(data.safeProfile);
   setStatus('dg-st-source', '✓'); setStatus('dg-st-privacy', '✓');
   pipeDone(['source', 'profile', 'privacy']);
+  refreshGuides();
   icons();
 }
 
@@ -141,6 +157,9 @@ async function loadSpec(name) {
   state.spec = data.spec;
   state.specName = data.name;
   state.specHash = data.hash;
+  state.specChecked = false;
+  state.built = false;
+  state.published = false;
   $('#dg-spec-view').textContent = JSON.stringify(data.spec, null, 2);
   $('#dg-top-spec').textContent = data.spec.appName;
   $('#dg-build-spec-name').textContent = data.spec.appName;
@@ -150,6 +169,7 @@ async function loadSpec(name) {
   $('#dg-spec-badge').classList.add('dg-hidden');
   setStatus('dg-st-spec', '');
   renderLayout(data.spec);
+  refreshGuides();
   icons();
 }
 
@@ -257,14 +277,50 @@ $('#dg-btn-spec-check').addEventListener('click', async () => {
   try {
     const r = await api('/api/check', { method: 'POST', body: JSON.stringify(state.spec), headers: { 'Content-Type': 'application/json' } });
     if (r.ok) {
-      $('#dg-spec-check-out').innerHTML = '<div class="dg-rowbtn" style="margin-top:10px;"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>схема v1 пройдена, ссылки корректны</span></div>';
+      state.specChecked = true;
+      $('#dg-spec-check-out').innerHTML = '<div class="dg-rowbtn" style="margin-top:10px;"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>схема v1, ссылки и сетка — корректны</span></div>';
       $('#dg-spec-badge').classList.remove('dg-hidden');
       setStatus('dg-st-spec', '✓');
     } else {
+      state.specChecked = false;
       $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(r.errors.join('\n')) + '</pre>';
     }
   } catch (e) { $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(e.message) + '</pre>'; }
+  refreshGuides();
   icons();
+});
+
+// ── правка макета словами ──
+$('#dg-btn-patch').addEventListener('click', async () => {
+  const btn = $('#dg-btn-patch'), logEl = $('#dg-patch-log');
+  const instruction = $('#dg-patch-in').value.trim();
+  if (!instruction) return;
+  if (!state.spec) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала откройте или сгенерируйте spec на шаге «Спецификация».'; return; }
+  btn.disabled = true;
+  logEl.classList.remove('dg-hidden', 'is-err');
+  logEl.textContent = 'Отправляю текущий spec и правку в модель…';
+  try {
+    const r = await api('/api/patch-spec', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec: state.spec, instruction })
+    });
+    state.spec = r.spec;
+    state.specName = null;   // правка = новая версия, прежний файл больше не источник
+    state.specHash = null;   // старое утверждение сгорает
+    state.specChecked = true; // сервер прогнал валидатор (схема+ссылки+сетка)
+    state.built = false;
+    state.published = false;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName + ' (изменён)';
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (изменён, не сохранён)';
+    $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
+    renderLayout(r.spec);
+    logEl.textContent = r.log.join('\n') + '\nМакет обновлён. Пересоберите черновик на вкладке «Сборка и проверка».';
+    setStatus('dg-st-spec', '✓');
+  } catch (e) {
+    logEl.classList.add('is-err');
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
 // ── макет ──
@@ -295,28 +351,34 @@ $('#dg-btn-build').addEventListener('click', async () => {
   const tick = setInterval(() => { timer.textContent = 'идёт сборка… ' + Math.round((Date.now() - t0) / 1000) + ' с'; }, 500);
   $('#dg-build-log').classList.remove('dg-hidden', 'is-err');
   $('#dg-build-log').textContent = 'Подключение к Qlik и сборка…';
+  // сборка из сохранённого spec-файла или из spec в памяти (сгенерирован/изменён ИИ)
+  const payload = state.specName ? { specName: state.specName } : { spec: state.spec };
   try {
     const r = await api('/api/build', {
-      method: 'POST', body: JSON.stringify({ specName: state.specName }),
+      method: 'POST', body: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json' }
     });
     clearInterval(tick);
     timer.textContent = 'готово за ' + Math.round((Date.now() - t0) / 1000) + ' с';
     $('#dg-build-log').textContent = r.log.join('\n');
     $('#dg-build-log').classList.add('is-ok');
+    state.built = true;
+    state.published = false;
     renderVerify(r.verify);
     setStatus('dg-st-build', '✓');
     pipeDone(['source', 'profile', 'privacy', 'spec', 'build']);
   } catch (e) {
     clearInterval(tick);
     timer.textContent = '';
+    state.built = false;
     $('#dg-build-log').textContent += '\nОШИБКА: ' + e.message;
     $('#dg-build-log').classList.add('is-err');
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; refreshGuides(); icons(); }
 });
 
 function renderVerify(v) {
   if (!v) return;
+  state.verifyOk = !v.objectErrors.length && v.rowsMatch !== false;
   const okRows = [];
   for (const h of v.hyperCubes) okRows.push('<li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>' +
     esc(h.type) + ' «' + esc(h.title) + '»: <b>' + h.rows + '×' + h.cols + '</b></span></li>');
@@ -359,6 +421,12 @@ function currentSpecApproved() {
 
 function updateApprovalBadge() {
   const badge = $('#dg-approval-badge'), btn = $('#dg-btn-publish');
+  if (!state.specHash && state.spec) {
+    badge.textContent = 'spec изменён — утверждение сгорело';
+    badge.className = 'dg-badge dg-badge--warn';
+    btn.disabled = true;
+    return;
+  }
   if (!state.specHash) { badge.textContent = 'spec не выбран'; return; }
   if (currentSpecApproved()) {
     badge.textContent = 'утверждено';
@@ -396,12 +464,13 @@ $('#dg-btn-publish').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' }
     });
     const st = r.published.stream || {};
+    state.published = true;
     $('#dg-publish-result').innerHTML = '<span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>опубликовано в стрим «' + esc(st.name || '') + '»</span>';
     pipeDone(['source', 'profile', 'privacy', 'spec', 'build', 'publish']);
     setStatus('dg-st-publish', '✓');
   } catch (e) {
     $('#dg-publish-result').textContent = 'Ошибка: ' + e.message;
-  } finally { btn.disabled = false; updateApprovalBadge(); icons(); }
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
 // ── старт ──

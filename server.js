@@ -110,6 +110,24 @@ const api = {
     return [200, { name, spec: JSON.parse(fs.readFileSync(fp, 'utf8')), hash: specHash(fp) }];
   },
 
+  // Правка spec словами: {spec, instruction} → {spec, attempts, log}
+  'POST /api/patch-spec': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!body.spec || typeof body.spec !== 'object') return [400, { error: 'Нужен текущий spec (откройте или сгенерируйте его на шаге «Спецификация»)' }];
+    if (!body.instruction || !String(body.instruction).trim()) return [400, { error: 'Опишите желаемое изменение словами' }];
+    const aiCfg = (CFG && CFG.ai) || null;
+    if (!aiCfg) return [500, { error: 'В config.json нет блока ai' }];
+    const logLines = [];
+    const { patchSpec } = require('./src/ai/patch-spec');
+    try {
+      const r = await patchSpec({ spec: body.spec, instruction: String(body.instruction), aiCfg, log: l => logLines.push(l) });
+      return [200, { spec: r.spec, attempts: r.attempts, log: logLines }];
+    } catch (e) {
+      logLines.push('ОШИБКА: ' + e.message);
+      return [502, { error: e.message, log: logLines }];
+    }
+  },
+
   'POST /api/check': async req => {
     const body = await readBody(req);
     const result = validateSpec(JSON.parse(body.toString('utf8')));
