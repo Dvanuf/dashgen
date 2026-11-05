@@ -161,8 +161,14 @@ async function loadKeyStatus() {
     const st = await api('/api/key-status');
     $('#dg-key-row').classList.toggle('dg-hidden', st.present);
     $('#dg-key-badge').classList.toggle('dg-hidden', !st.present);
+    $('#dg-btn-rekey').classList.toggle('dg-hidden', !st.present);
   } catch (e) { /* сервер не отвечает — поле остаётся видимым */ }
 }
+
+$('#dg-btn-rekey').addEventListener('click', () => {
+  $('#dg-key-row').classList.remove('dg-hidden');
+  $('#dg-key-input').focus();
+});
 
 $('#dg-btn-save-key').addEventListener('click', async () => {
   const key = $('#dg-key-input').value.trim();
@@ -181,6 +187,35 @@ $('#dg-btn-save-key').addEventListener('click', async () => {
     logEl.textContent = 'Ошибка сохранения ключа: ' + e.message;
   }
 });
+
+// ── проект ИИ: платформа и модель ──
+async function loadAiPresets() {
+  const r = await api('/api/ai-presets');
+  const sel = $('#dg-ai-endpoint');
+  sel.innerHTML = r.presets.map(p => '<option value="' + esc(p.baseUrl) + '">' + esc(p.label) + '</option>').join('');
+  const cur = r.current && r.current.baseUrl;
+  if (cur && !r.presets.some(p => p.baseUrl === cur)) {
+    sel.insertAdjacentHTML('beforeend', '<option value="' + esc(cur) + '">Свой URL</option>');
+  }
+  if (cur) sel.value = cur;
+  if (r.current && r.current.model) $('#dg-ai-model-in').value = r.current.model;
+}
+
+async function saveAiEndpoint() {
+  try {
+    await api('/api/set-ai-endpoint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: $('#dg-ai-endpoint').value, model: $('#dg-ai-model-in').value.trim() })
+    });
+    $('#dg-endpoint-saved').textContent = 'сохранено ✓';
+    setTimeout(() => { $('#dg-endpoint-saved').textContent = ''; }, 2500);
+  } catch (e) {
+    $('#dg-endpoint-saved').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+$('#dg-ai-endpoint').addEventListener('change', saveAiEndpoint);
+$('#dg-ai-model-in').addEventListener('change', saveAiEndpoint);
 
 // ── проект ИИ: генерация spec ──
 $('#dg-btn-ai-gen').addEventListener('click', async () => {
@@ -208,7 +243,11 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
     pipeDone(['source', 'profile', 'privacy', 'spec']);
   } catch (e) {
     logEl.classList.add('is-err');
-    logEl.textContent += '\nОШИБКА: ' + e.message + (e.log ? '\n' + e.log.join('\n') : '');
+    let msg = '\nОШИБКА: ' + e.message;
+    if (/HTTP 401/.test(e.message)) {
+      msg += '\nПодсказка: ключ отклонён. Ключ от одной платформы Z.ai не работает на другой — выберите правильную платформу (Open Platform / Coding Plan / BigModel) и нажмите «Заменить ключ».';
+    }
+    logEl.textContent += msg;
   } finally { btn.disabled = false; }
 });
 $('#dg-spec-select').addEventListener('change', () => loadSpec($('#dg-spec-select').value));

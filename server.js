@@ -261,6 +261,34 @@ api['POST /api/set-api-key'] = async req => {
   return [200, { present: true, source: 'file', file: fp }];
 };
 
+// Смена endpoint/модели ИИ-провайдера: обновляет блок ai в config.json (без ключа).
+// Ключ от одной платформы Z.ai не работает на другой (Coding Plan ≠ Open Platform ≠ BigModel).
+const AI_PRESETS = [
+  { id: 'zai-open', label: 'Z.ai Open Platform', baseUrl: 'https://api.z.ai/api/paas/v4' },
+  { id: 'zai-coding', label: 'Z.ai Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4' },
+  { id: 'bigmodel', label: 'BigModel (Китай)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }
+];
+
+api['GET /api/ai-presets'] = () => [200, { presets: AI_PRESETS, current: CFG && CFG.ai ? { baseUrl: CFG.ai.baseUrl, model: CFG.ai.model } : null }];
+
+api['POST /api/set-ai-endpoint'] = async req => {
+  const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+  if (!CFG) return [500, { error: 'config.json не найден' }];
+  const baseUrl = String(body.baseUrl || '').trim().replace(/\/$/, '');
+  const model = String(body.model || '').trim();
+  if (baseUrl && !/^https:\/\//.test(baseUrl)) return [400, { error: 'baseUrl должен начинаться с https://' }];
+  if (!CFG.ai) CFG.ai = {};
+  if (baseUrl) CFG.ai.baseUrl = baseUrl;
+  if (model) CFG.ai.model = model;
+  const cfgPath = path.join(ROOT, 'config.json');
+  const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  raw.ai = raw.ai || {};
+  if (baseUrl) raw.ai.baseUrl = CFG.ai.baseUrl;
+  if (model) raw.ai.model = CFG.ai.model;
+  fs.writeFileSync(cfgPath, JSON.stringify(raw, null, 2) + '\n');
+  return [200, { ai: { baseUrl: CFG.ai.baseUrl, model: CFG.ai.model } }];
+};
+
 // Сборка: {specName} или {spec}
 const apiBuild = {
   'POST /api/build': async req => {

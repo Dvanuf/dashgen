@@ -98,14 +98,22 @@
           <div class="dg-card">
             <p class="dg-cardtitle"><i data-lucide="pen-line" aria-hidden="true"></i>Проект ИИ: сгенерировать spec по описанию</p>
             <textarea class="dg-input" id="dg-ai-desc" rows="3" style="width:100%;min-height:70px;resize:vertical;" placeholder="Отчёт по продажам за 2026: выручка и заказы по месяцам, топ категорий, разбивка по регионам. 4 KPI: выручка, заказы, средний чек, количество. Без реальных цифр и имён клиентов."></textarea>
-            <div class="dg-rowbtn" id="dg-key-row" style="background:var(--dg-warnsoft);border-radius:8px;padding:8px 10px;margin-top:0;">
+            <div class="dg-rowbtn" style="margin-top:0;">
+              <span class="dg-note">Платформа:</span>
+              <select class="dg-input" id="dg-ai-endpoint" style="flex:none;width:auto;"></select>
+              <span class="dg-note">Модель:</span>
+              <input class="dg-input" id="dg-ai-model-in" type="text" value="glm-4.6" style="flex:none;width:110px;">
+              <span class="dg-note" id="dg-endpoint-saved"></span>
+            </div>
+            <div class="dg-rowbtn" id="dg-key-row" style="background:var(--dg-warnsoft);border-radius:8px;padding:8px 10px;">
               <i data-lucide="key-round" aria-hidden="true" style="width:14px;height:14px;color:var(--dg-warn);"></i>
-              <input class="dg-input" id="dg-key-input" type="password" placeholder="Ключ API Z.ai (сохранится в ~/.dashgen/zai_api_key, chmod 600)" style="flex:1;">
+              <input class="dg-input" id="dg-key-input" type="password" placeholder="Ключ API выбранной платформы (сохранится в ~/.dashgen/zai_api_key, chmod 600)" style="flex:1;">
               <button class="dg-btn" id="dg-btn-save-key" type="button"><i data-lucide="save" aria-hidden="true"></i>Сохранить ключ</button>
             </div>
             <div class="dg-rowbtn">
               <button class="dg-btn dg-btn--p" id="dg-btn-ai-gen" type="button"><i data-lucide="sparkles" aria-hidden="true"></i>Сгенерировать spec из профиля</button>
-              <span class="dg-note">Провайдер: <b id="dg-ai-model">—</b> · t = 0 · уходит только профиль schema · <span class="dg-badge dg-badge--warn dg-hidden" id="dg-key-badge"><i data-lucide="key-round" aria-hidden="true"></i>ключ настроен</span></span>
+              <button class="dg-btn dg-hidden" id="dg-btn-rekey" type="button"><i data-lucide="key-round" aria-hidden="true"></i>Заменить ключ</button>
+              <span class="dg-note">t = 0 · уходит только профиль schema · <span class="dg-badge dg-badge--warn dg-hidden" id="dg-key-badge"><i data-lucide="key-round" aria-hidden="true"></i>ключ настроен</span></span>
             </div>
             <pre class="dg-code dg-hidden" id="dg-ai-log"></pre>
             <hr style="border:none;border-top:1px solid var(--dg-line);margin:14px 0;">
