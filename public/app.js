@@ -773,8 +773,6 @@ $('#dg-btn-save-layout').addEventListener('click', () => {
 });
 
 // ── правка макета словами (SSE, живой прогресс) ──
-
-// ── правка макета словами (SSE, живой прогресс) ──
 $('#dg-btn-patch').addEventListener('click', async () => {
   const btn = $('#dg-btn-patch'), logEl = $('#dg-patch-log');
   const instruction = $('#dg-patch-in').value.trim();
@@ -1156,13 +1154,16 @@ $('#dg-btn-gen-share').addEventListener('click', async () => {
 
 // ── старт ──
 (async () => {
-  await loadConfig();
-  await loadSpecList().catch(e => console.warn(e));
-  await loadApprovals().catch(e => console.warn(e));
-  await loadStreams().catch(e => console.warn(e));
-  await loadKeyStatus().catch(e => console.warn(e));
-  await loadAiPresets().catch(e => console.warn(e));
-  await shareLoad().catch(e => console.warn(e));
+  // параллельный старт: медленный шаг (QRS/стримы) не тормозит остальные
+  await Promise.allSettled([
+    loadConfig(),
+    loadSpecList(),
+    loadApprovals(),
+    loadStreams(),
+    loadKeyStatus(),
+    loadAiPresets(),
+    shareLoad()
+  ]);
   try {
     const st = await api('/api/state');
     if (st.profile && st.profile.safeProfile) {

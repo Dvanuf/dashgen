@@ -7,7 +7,7 @@ const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
 
-const PORT = 4749;
+const PORT = 4748;
 const ROOT = __dirname;
 // В собранном .app код внутри asar (только чтение) — записываемое в DASHGEN_DATA_DIR
 const DATA = process.env.DASHGEN_DATA_DIR || ROOT;

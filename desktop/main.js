@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 
-const PORT = 4749;
+const PORT = 4748;
 const ROOT = path.join(__dirname, '..');
 
 let win = null;

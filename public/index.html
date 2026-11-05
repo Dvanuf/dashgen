@@ -183,7 +183,12 @@
         </div>
         <p class="dg-note" id="dg-layout-note" style="margin:8px 0 0;">Правка меняет col/row/colspan/rowspan в spec. Сетка и перекрытия проверяются валидатором.</p>
         <div class="dg-card" style="margin-top:12px;">
-          <p class="dg-cardtitle"><i data-lucide="repeat" aria-hidden="true"></i>Как меняется дашборд <span class="dg-note" style="margin-left:auto;font-weight:400;">spec.json — единственный контракт</span></p>
+          <div class="dg-rowbtn" style="margin-top:0;">
+            <input class="dg-input" id="dg-patch-in" type="text" placeholder="Правка словами: «добавь пузырьковую диаграмму по показателям», «перенеси таблицу вниз»" style="flex:1;">
+            <button class="dg-btn" id="dg-btn-patch" type="button"><i data-lucide="sparkles" aria-hidden="true"></i>Патч spec</button>
+          </div>
+          <pre class="dg-code dg-hidden" id="dg-patch-log"></pre>
+          <p class="dg-cardtitle" style="margin-top:12px;"><i data-lucide="repeat" aria-hidden="true"></i>Как меняется дашборд <span class="dg-note" style="margin-left:auto;font-weight:400;">spec.json — единственный контракт</span></p>
           <div class="dg-flow">
             <span class="dg-flowstep"><span class="dg-fnum">1</span>Правка (мышью или словами)</span>
             <span class="dg-flarrow">→</span>
@@ -287,6 +292,7 @@
   <footer class="dg-foot">Данные не покидают контур · ИИ получает только профиль · spec.json — контракт между ИИ и сборкой</footer>
 </div>
 <script src="lucide.min.js"></script>
+<script>window.addEventListener('error', function (e) { window.__lastErr = (e.message || '?') + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0); });</script>
 <script src="main.js?v=031"></script>
 </body>
 </html>
