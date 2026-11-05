@@ -130,6 +130,7 @@ const api = {
   'GET /api/config': () => {
     if (!CFG) return [500, { error: 'config.json не найден — скопируйте config.example.json и заполните' }];
     return [200, {
+      version: require('./package.json').version,
       host: CFG.host, portEngine: CFG.port, portQrs: 4242,
       userDirectory: CFG.userDirectory, userId: CFG.userId,
       certDir: CFG.certDir, rejectUnauthorized: CFG.rejectUnauthorized,

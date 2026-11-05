@@ -116,6 +116,8 @@ async function loadConfig() {
     $('#dg-cfg-chip').textContent = 'config загружен';
     $('#dg-cfg-chip').className = 'dg-chipstat is-ok';
     $('#dg-user-chip').textContent = cfg.userDirectory + '\\' + cfg.userId;
+    const nf = document.querySelector('.dg-navfoot');
+    if (nf) nf.innerHTML = nf.innerHTML.replace(/Dashgen [\d.]+/, 'Dashgen v' + (cfg.version || '?'));
     $('#dg-conn-host').textContent = cfg.host;
     $('#dg-conn-ports').textContent = 'Engine ' + cfg.portEngine + ' · QRS ' + cfg.portQrs + ' · сертификаты ' + cfg.certDir;
     $('#dg-conn-table').innerHTML = [
