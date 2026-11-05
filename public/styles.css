@@ -175,3 +175,13 @@ body { margin: 0; background: var(--dg-bg, #eef1f6); display: flex; justify-cont
 .dg-share-item.is-on svg, .dg-share-item.is-on .meta { color: var(--dg-acc); }
 
 .dg-hidden { display: none !important; }
+
+/* скелет раскладки и отрисованный вариант */
+.dg-h3 { font-size: 13px; font-weight: 600; color: var(--dg-mut); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+.dg-grid-skeleton { height: 260px; opacity: .85; }
+.dg-grid-rendered { height: 470px; }
+.dg-grid .gcell.skeleton .skeleton-fill { height: calc(100% - 44px); margin-top: 6px; border-radius: 4px; border: 1.5px dashed var(--dg-line); }
+.dg-grid .gcell .kpi-value { font-size: 26px; font-weight: 600; color: var(--dg-acc); margin-top: 2px; }
+.dg-grid .gcell .kpi-sub { font-size: 10px; color: var(--dg-mut); }
+.dg-grid .gcell .kpi-loading { font-size: 16px; color: var(--dg-mut); }
+.dg-grid-rendered .gcell .t { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

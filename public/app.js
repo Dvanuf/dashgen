@@ -357,12 +357,12 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
-// ── макет: цветной предпросмотр с настоящими диаграммами ──
-const DG_PALETTE = ['#2e6da8', '#5a9fd8', '#8fb8dc', '#e0a63e', '#c04343', '#1f8f5f', '#97a3b8'];
+// ── макет: два вида — скелет раскладки и отрисованный вариант «как в дашборде» ──
+const DG_PALETTE = ['#2e6da8', '#5a9fd8', '#8fb8dc', '#e0a63e', '#c04343', '#1f8f5f', '#97a3b8', '#73593c'];
 
 function fieldFromFormula(f) {
-  const m = String(f || '').match(/^(sum|count)\s*\(\s*(?:distinct\s+)?\[?([^\]\)]+?)\]?\s*\)/i);
-  return m ? { agg: m[1].toLowerCase(), field: m[2].trim() } : null;
+  const m = String(f || '').match(/^(sum|count|avg)\s*\(\s*(?:distinct\s+)?\[?([^\]\)]+?)\]?\s*\)/i);
+  return m ? { agg: m[1].toLowerCase(), distinct: /distinct/i.test(m[0]), field: (m[2] || '').trim() } : null;
 }
 
 // группы, которые нужны объектам spec: [{dim, measure, agg}]
@@ -375,177 +375,301 @@ function layoutGroups(spec) {
       if (!['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap'].includes(o.type)) continue;
       const dimField = dimsById[o.dimension];
       if (!dimField) continue;
-      const fm = fieldFromFormula((spec.measures || []).find(x => x.id === (o.measures || [])[0])?.formula) || { agg: 'count', field: null };
-      groups.push({ dim: dimField, measure: fm.field, agg: fm.agg, ref: o });
+      const fm = fieldFromFormula((spec.measures || []).find(x => x.id === (o.measures || [])[0])?.formula) || { agg: 'count', distinct: false, field: null };
+      groups.push({ dim: dimField, measure: fm.field, agg: fm.agg, distinct: fm.distinct, ref: o });
     }
   }
   return groups;
 }
 
+// KPI и пузырьковые из spec — для серверных агрегатов
+function layoutKpis(spec) {
+  return (spec.measures || []).filter(m => (spec.sheets || []).some(s => (s.objects || []).some(o => o.type === 'kpi' && o.measure === m.id)))
+    .map(m => ({ id: m.id, formula: m.formula }));
+}
+function layoutScatters(spec) {
+  const dimsById = {};
+  for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
+  const out = [];
+  for (const sheet of spec.sheets || []) {
+    for (const o of sheet.objects || []) {
+      if (o.type !== 'scatterplot' || !o.dimension) continue;
+      const fields = (o.measures || []).map(id => {
+        const fm = fieldFromFormula((spec.measures || []).find(x => x.id === id)?.formula);
+        return fm ? fm.field : null;
+      });
+      out.push({ key: (dimsById[o.dimension] || '') + '|' + fields.join('|'), xF: fields[0], yF: fields[1], sF: fields[2] || null });
+    }
+  }
+  return out;
+}
+
 async function previewDataFor(spec) {
-  // inline-синтетика: агрегируем прямо в браузере из spec.source.rows
+  const groups = layoutGroups(spec), kpis = layoutKpis(spec), scatters = layoutScatters(spec);
+  // inline-синтетика: агрегируем в браузере из spec.source.rows
   if (spec.source.type === 'inline') {
     const { fields, rows } = spec.source;
     const idx = f => fields.indexOf(f);
-    const groups = {};
-    for (const g of layoutGroups(spec)) {
+    const isNum = v => typeof v === 'number';
+    const gOut = {};
+    for (const g of groups) {
       const di = idx(g.dim);
       if (di < 0) continue;
       const mi = g.measure ? idx(g.measure) : -1;
       const acc = {};
       for (const r of rows || []) {
         const label = String(r[di]);
-        if (g.agg === 'count' || mi < 0) { acc[label] = (acc[label] || 0) + 1; continue; }
-        if (typeof r[mi] === 'number') acc[label] = (acc[label] || 0) + r[mi];
+        if (g.agg === 'count') { if (r[di] !== null) acc[label] = (acc[label] || 0) + 1; continue; }
+        if (mi >= 0 && isNum(r[mi])) acc[label] = (acc[label] || 0) + r[mi];
       }
-      const key = g.dim + '|' + g.measure + '|' + g.agg;
-      const top = Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 10)
+      const top = Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 12)
         .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
-      groups[key] = { labels: top.map(t => t.label), values: top.map(t => t.value) };
+      gOut[g.dim + '|' + g.measure + '|' + g.agg] = { labels: top.map(t => t.label), values: top.map(t => t.value) };
     }
-    return { groups, sample: (rows || []).slice(0, 8).map(r => fields.map(f => r[fields.indexOf(f)])), fields, rowCount: (rows || []).length };
+    const kpiValues = {};
+    for (const k of kpis) {
+      const fm = fieldFromFormula(k.formula);
+      if (!fm || idx(fm.field) < 0) { kpiValues[k.id] = null; continue; }
+      const vals = (rows || []).map(r => r[idx(fm.field)]).filter(isNum);
+      kpiValues[k.id] = fm.agg === 'count' ? (fm.distinct ? new Set((rows || []).map(r => String(r[idx(fm.field)]))).size : vals.length) : fm.agg === 'avg' ? (vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null) : vals.reduce((a, b) => a + b, 0);
+    }
+    const sOut = {};
+    for (const s of scatters) {
+      const xi = idx(s.xF), yi = idx(s.yF), zi = s.sF ? idx(s.sF) : -1;
+      if (xi < 0 || yi < 0) continue;
+      sOut[s.key] = (rows || []).filter(r => isNum(r[xi]) && isNum(r[yi])).slice(0, 400)
+        .map(r => ({ x: r[xi], y: r[yi], size: zi >= 0 ? r[zi] : null }));
+    }
+    return { groups: gOut, kpiValues, scatterPoints: sOut, sample: (rows || []).slice(0, 8).map(r => fields.map(f => r[fields.indexOf(f)])), fields, rowCount: (rows || []).length };
   }
   // excel: агрегаты считает сервер по локальному файлу (или резолвит lib:// на шару)
   const r = await api('/api/preview-data', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ groups: layoutGroups(spec).map(g => ({ dim: g.dim, measure: g.measure, agg: g.agg })), sheet: spec.source.sheet, source: spec.source })
+    body: JSON.stringify({
+      groups: groups.map(g => ({ dim: g.dim, measure: g.measure, agg: g.agg })),
+      kpis, scatters, sheet: spec.source.sheet, source: spec.source
+    })
   });
   return r;
 }
 
-// SVG-диаграммы: данные → цветной рисунок в слоте макета
-function chartSVG(o, spec, pd, w, h) {
+// Числа: компакт (млрд/млн/тыс) и ру-формат
+function fmtCompact(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toLocaleString('ru', { maximumFractionDigits: 2 }) + ' млрд';
+  if (a >= 1e6) return (v / 1e6).toLocaleString('ru', { maximumFractionDigits: 1 }) + ' млн';
+  if (a >= 1e4) return (v / 1e3).toLocaleString('ru', { maximumFractionDigits: 1 }) + ' тыс';
+  return v.toLocaleString('ru', { maximumFractionDigits: 1 });
+}
+function fmtRu(v) { return v === null || v === undefined || isNaN(v) ? '—' : Math.round(v).toLocaleString('ru-RU'); }
+
+const CHART_TYPES = ['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap', 'gauge'];
+const DEFAULT_SIZE = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], piechart: [8, 4], scatterplot: [10, 5], combochart: [10, 4], treemap: [10, 4], gauge: [5, 3], table: [20, 5], listbox: [4, 4], 'pivot-table': [12, 5] };
+
+function specObjectCells(spec) {
+  const out = [];
+  (spec.sheets || []).forEach((sheet, si) => (sheet.objects || []).forEach((o, oi) => {
+    const [dc, dr] = DEFAULT_SIZE[o.type] || [4, 3];
+    out.push({ o, si, oi, cs: o.colspan || dc, rs: o.rowspan || dr });
+  }));
+  return out;
+}
+
+// СКЕЛЕТ: сетка с пустыми слотами (тип + заголовок), без данных
+function renderSkeleton(spec) {
+  const cells = specObjectCells(spec).map(({ o, cs, rs }) =>
+    '<div class="gcell skeleton" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
+    '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
+    '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' +
+    '<div class="skeleton-fill"></div></div>');
+  return '<div class="dg-grid dg-grid-skeleton">' + cells.join('') + '</div>';
+}
+
+// ОТРИСОВКА: диаграммы в стиле дашборда
+function renderedChartSVG(o, spec, pd) {
   const dimsById = {}; for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
   const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
   const dimField = dimsById[o.dimension];
-  const fm = fieldFromFormula((spec.measures || []).find(x => x.id === (o.measures || [])[0])?.formula) || { agg: 'count', field: null };
-  const key = dimField + '|' + fm.field + '|' + fm.agg;
-  const g = (pd.groups || {})[key] || { labels: [], values: [] };
-  const W = 200, H = 110, pad = 26;
-  const vals = g.values, labs = g.labels;
-  const max = Math.max(...vals, 1);
-  const fmt = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 'к' : String(v);
+  const W = 300, H = 150, padL = 40, padB = 24, padT = 10;
+  const innerW = W - padL - 10, innerH = H - padB - padT;
 
-  if (o.type === 'barchart' || o.type === 'treemap') {
-    if (o.type === 'treemap') {
-      const total = vals.reduce((a, b) => a + b, 0) || 1;
-      let x = 2, out = '';
-      vals.forEach((v, i) => {
-        const bw = Math.max(v / total * (W - 4) - 2, 14);
-        out += `<rect x="${x}" y="6" width="${bw}" height="${H - 26}" rx="3" fill="${DG_PALETTE[i % 7]}" opacity=".9"></rect>` +
-          `<text x="${x + 4}" y="20" fill="#fff" font-size="8">${fmt(v)}</text>` +
-          `<text x="${x + 2}" y="${H - 14}" fill="var(--dg-mut)" font-size="7">${esc(String(labs[i]).slice(0, 9))}</text>`;
-        x += bw + 2;
-      });
-      return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
-    }
-    const n = vals.length || 1, bw = Math.max((W - pad * 2) / n - 4, 6);
-    let out = '';
+  const groupFor = mId => {
+    const fm = fieldFromFormula(measById[mId]?.formula) || { agg: 'count', field: null };
+    return (pd.groups || {})[dimField + '|' + fm.field + '|' + fm.agg] || { labels: [], values: [] };
+  };
+
+  if (o.type === 'kpi') {
+    const v = (pd.kpiValues || {})[o.measure];
+    return '<svg viewBox="0 0 300 150">' +
+      '<text x="150" y="86" text-anchor="middle" font-size="34" font-weight="600" fill="var(--dg-acc)">' + esc(fmtCompact(v)) + '</text>' +
+      '<text x="150" y="112" text-anchor="middle" font-size="12" fill="var(--dg-mut)">' + esc(measById[o.measure]?.title || '') + '</text></svg>';
+  }
+  if (o.type === 'gauge') {
+    const v = (pd.kpiValues || {})[o.measure];
+    const frac = Math.min(Math.max((v ?? 0) / (Math.max(v, 1) * 1.2), 0.02), 1);
+    const a0 = -Math.PI * 0.75;
+    const a1 = a0 + frac * Math.PI * 1.5;
+    const arc = (from, to, r) => `M${150 + r * Math.cos(from)},${86 + r * Math.sin(from)} A${r},${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${150 + r * Math.cos(to)},${86 + r * Math.sin(to)}`;
+    return '<svg viewBox="0 0 300 150">' +
+      `<path d="${arc(a0, a0 + Math.PI * 1.5, 78)}" fill="none" stroke="var(--dg-line)" stroke-width="16" stroke-linecap="round"></path>` +
+      `<path d="${arc(a0, a1, 78)}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="16" stroke-linecap="round"></path>` +
+      `<text x="150" y="92" text-anchor="middle" font-size="24" font-weight="600" fill="var(--dg-ink)">${esc(fmtCompact(v))}</text>` +
+      `<text x="150" y="114" text-anchor="middle" font-size="11" fill="var(--dg-mut)">${esc(measById[o.measure]?.title || '')}</text></svg>`;
+  }
+  if (o.type === 'scatterplot') {
+    const sKey = layoutScatters(spec).find(s => true)?.key || '';
+    const key = o.dimension + '|' + (o.measures || []).join('|');
+    const pts = (pd.scatterPoints || {})[key] || (pd.scatterPoints || {})[sKey] || [];
+    if (!pts.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет числовых пар</text></svg>';
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y), ss = pts.map(p => p.size ?? 1);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const s0 = Math.min(...ss), s1 = Math.max(...ss);
+    const sx = v => padL + ((v - x0) / ((x1 - x0) || 1)) * innerW;
+    const sy = v => padT + innerH - ((v - y0) / ((y1 - y0) || 1)) * innerH;
+    let out = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + innerH}" stroke="var(--dg-line)"></line><line x1="${padL}" y1="${padT + innerH}" x2="${padL + innerW}" y2="${padT + innerH}" stroke="var(--dg-line)"></line>`;
+    pts.forEach((p, i) => {
+      const r = 3 + ((p.size - s0) / ((s1 - s0) || 1)) * 9;
+      out += `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="${r.toFixed(1)}" fill="${DG_PALETTE[i % 7]}" opacity="0.55"></circle>`;
+    });
+    out += `<text x="${padL}" y="${padT + innerH + 16}" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x0))}</text><text x="${padL + innerW}" y="${padT + innerH + 16}" text-anchor="end" font-size="9" fill="var(--dg-mut)">${esc(fmtRu(x1))}</text>`;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  // Остальные графики — по группе {labels, values}
+  const g = groupFor((o.measures || [])[0]);
+  const vals = g.values, labs = g.labels;
+  if (!vals.length) return '<svg viewBox="0 0 300 150"><text x="150" y="70" text-anchor="middle" font-size="11" fill="var(--dg-mut)">нет данных для графика</text></svg>';
+  const max = Math.max(...vals, 1);
+  let out = '';
+  // сетка и подписи оси Y
+  for (let i = 0; i <= 3; i++) {
+    const gy = padT + innerH - (i / 3) * innerH;
+    out += `<line x1="${padL}" y1="${gy}" x2="${padL + innerW}" y2="${gy}" stroke="var(--dg-line)" stroke-width="0.7"></line>` +
+      `<text x="${padL - 4}" y="${gy + 3}" text-anchor="end" font-size="8" fill="var(--dg-mut)">${esc(fmtCompact(max * i / 3))}</text>`;
+  }
+  if (o.type === 'barchart') {
+    const n = vals.length || 1, bw = Math.max((innerW) / n - 4, 5);
     vals.forEach((v, i) => {
-      const bh = Math.max(v / max * (H - pad - 12), 2);
-      const x = pad + i * ((W - pad * 2) / n) + 2;
-      out += `<rect x="${x}" y="${H - 18 - bh}" width="${bw}" height="${bh}" rx="2" fill="${DG_PALETTE[i % 7]}"></rect>` +
-        `<text x="${x + bw / 2}" y="${H - 21 - bh}" text-anchor="middle" font-size="7.5" fill="var(--dg-ink)">${fmt(v)}</text>` +
-        `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="7" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 7))}</text>`;
+      const bh = Math.max(v / max * innerH, 2);
+      const x = padL + i * (innerW / n) + 2;
+      out += `<rect x="${x}" y="${padT + innerH - bh}" width="${bw}" height="${bh}" rx="2" fill="${DG_PALETTE[i % 8]}"></rect>` +
+        `<text x="${x + bw / 2}" y="${padT + innerH - bh - 3}" text-anchor="middle" font-size="8" fill="var(--dg-ink)">${esc(fmtCompact(v))}</text>` +
+        `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="7.5" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 9))}</text>`;
     });
     return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
-  if (o.type === 'linechart' || o.type === 'combochart') {
-    const pts = vals.map((v, i) => [pad + i * ((W - pad * 2) / Math.max(vals.length - 1, 1)), H - 18 - (v / max * (H - pad - 12))]);
-    const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
-    let out = `<line x1="${pad}" y1="${H - 18}" x2="${W - 6}" y2="${H - 18}" stroke="var(--dg-line)"></line>` +
-      `<path d="${path}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="2"></path>`;
+  if (o.type === 'linechart') {
+    const pts = vals.map((v, i) => [padL + i * (innerW / Math.max(vals.length - 1, 1)), padT + innerH - (v / max * innerH)]);
+    for (let i = 1; i < pts.length; i++) {
+      out += `<rect x="${Math.min(pts[i - 1][0], pts[i][0])}" y="${Math.min(pts[i - 1][1], pts[i][1])}" width="${Math.abs(pts[i][0] - pts[i - 1][0])}" height="${padT + innerH - Math.min(pts[i - 1][1], pts[i][1])}" fill="${DG_PALETTE[0]}" opacity="0.08"></rect>`;
+    }
+    out += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} L${padL + innerW},${padT + innerH} L${padL},${padT + innerH} Z" fill="${DG_PALETTE[0]}" opacity="0.12"></path>` +
+      `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="2.2"></path>`;
     pts.forEach((p, i) => {
-      out += `<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="${DG_PALETTE[0]}"></circle>` +
-        (vals.length <= 12 ? `<text x="${p[0]}" y="${H - 6}" text-anchor="middle" font-size="6.5" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 6))}</text>` : '');
+      out += `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${DG_PALETTE[0]}" stroke="var(--dg-panel)" stroke-width="1.4"></circle>`;
+      if (vals.length <= 14) out += `<text x="${p[0]}" y="${H - 8}" text-anchor="middle" font-size="8" fill="var(--dg-mut)">${esc(String(labs[i]).slice(0, 10))}</text>`;
     });
-    if (vals.length) out += `<text x="${pts[pts.length - 1][0]}" y="${pts[pts.length - 1][1] - 6}" text-anchor="end" font-size="8" font-weight="600" fill="var(--dg-ink)">${fmt(vals[vals.length - 1])}</text>`;
+    out += `<text x="${padL + innerW}" y="${pts[pts.length - 1][1] - 8}" text-anchor="end" font-size="10" font-weight="600" fill="var(--dg-ink)">${esc(fmtRu(vals[vals.length - 1]))}</text>`;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  if (o.type === 'combochart') {
+    const vals2 = groupFor((o.measures || [])[1]).values;
+    const n = vals.length || 1, bw = Math.max(innerW / n - 4, 4);
+    vals.forEach((v, i) => {
+      const bh = Math.max(v / max * innerH, 2);
+      const x = padL + i * (innerW / n) + 2;
+      out += `<rect x="${x}" y="${padT + innerH - bh}" width="${bw}" height="${bh}" fill="${DG_PALETTE[0]}"></rect>`;
+    });
+    const m2max = Math.max(...vals2, 1);
+    const pts2 = vals2.map((v, i) => [padL + i * (innerW / Math.max(vals2.length - 1, 1)) + bw / 2, padT + innerH - (v / m2max * innerH)]);
+    out += `<path d="${pts2.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="${DG_PALETTE[3]}" stroke-width="2"></path>`;
+    pts2.forEach(p => { out += `<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="${DG_PALETTE[3]}"></circle>`; });
+    labs.forEach((l, i) => { if (i < n) out += `<text x="${padL + i * (innerW / n) + innerW / n / 2}" y="${H - 8}" text-anchor="middle" font-size="7.5" fill="var(--dg-mut)">${esc(String(l).slice(0, 9))}</text>`; });
     return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
   if (o.type === 'piechart') {
     const total = vals.reduce((a, b) => a + b, 0) || 1;
-    const cx = 52, cy = H / 2, r = Math.min(cx, cy) - 8;
-    let ang = -Math.PI / 2, out = '';
-    vals.slice(0, 6).forEach((v, i) => {
+    const cx = 74, cy = H / 2, r = Math.min(cx, cy) - 10;
+    let ang = -Math.PI / 2;
+    vals.slice(0, 7).forEach((v, i) => {
       const a2 = ang + v / total * Math.PI * 2;
       const large = v / total > 0.5 ? 1 : 0;
-      out += `<path d="M${cx},${cy} L${cx + r * Math.cos(ang)},${cy + r * Math.sin(ang)} A${r},${r} 0 ${large} 1 ${cx + r * Math.cos(a2)},${cy + r * Math.sin(a2)} Z" fill="${DG_PALETTE[i % 7]}"></path>`;
+      out += `<path d="M${cx},${cy} L${cx + r * Math.cos(ang)},${cy + r * Math.sin(ang)} A${r},${r} 0 ${large} 1 ${cx + r * Math.cos(a2)},${cy + r * Math.sin(a2)} Z" fill="${DG_PALETTE[i % 8]}"></path>`;
       ang = a2;
     });
-    vals.slice(0, 4).forEach((v, i) => {
-      out += `<rect x="112" y="${14 + i * 16}" width="8" height="8" rx="2" fill="${DG_PALETTE[i % 7]}"></rect>` +
-        `<text x="124" y="${21 + i * 16}" font-size="8" fill="var(--dg-ink)">${esc(String(labs[i]).slice(0, 8))} · ${Math.round(v / total * 100)}%</text>`;
+    vals.slice(0, 5).forEach((v, i) => {
+      out += `<rect x="150" y="${20 + i * 18}" width="9" height="9" rx="2" fill="${DG_PALETTE[i % 8]}"></rect>` +
+        `<text x="164" y="${28 + i * 18}" font-size="9" fill="var(--dg-ink)">${esc(String(labs[i]).slice(0, 10))}</text>` +
+        `<text x="285" y="${28 + i * 18}" text-anchor="end" font-size="9" fill="var(--dg-mut)">${Math.round(v / total * 100)}%</text>`;
     });
     return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
-  if (o.type === 'scatterplot') {
-    // X и Y — первые две меры, размер — третья
-    const meas2 = (o.measures || []).map(id => fieldFromFormula(measById[id]?.formula)).filter(Boolean);
-    const xs = [], ys = [], ss = [];
-    const xF = meas2[0] ? meas2[0].field : null, yF = meas2[1] ? meas2[1].field : null, sF = meas2[2] ? meas2[2].field : null;
-    const colIdx = f => (pd.fields || []).indexOf(f);
-    for (const r of pd.sample || []) { /* sample мал для scatter — тянем точечно ниже */ }
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '"><text x="10" y="20" font-size="9" fill="var(--dg-mut)">пузырьковая: ' +
-      esc((o.measures || []).join(' / ')) + '</text><text x="10" y="36" font-size="8" fill="var(--dg-mut)">точный вид — в черновике Qlik</text></svg>';
-  }
-  if (o.type === 'gauge') {
-    const v = vals[0] ?? 0;
-    const frac = Math.min(v / max, 1);
-    const a0 = -Math.PI * 0.75, a1 = a0 + frac * Math.PI * 1.5;
-    const arc = (from, to, r) => `M${100 + r * Math.cos(from)},${H / 2 + r * Math.sin(from)} A${r},${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${100 + r * Math.cos(to)},${H / 2 + r * Math.sin(to)}`;
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' +
-      `<path d="${arc(a0, a0 + Math.PI * 1.5, 52)}" fill="none" stroke="var(--dg-line)" stroke-width="12" stroke-linecap="round"></path>` +
-      `<path d="${arc(a0, a1, 52)}" fill="none" stroke="${DG_PALETTE[0]}" stroke-width="12" stroke-linecap="round"></path>` +
-      `<text x="100" y="${H / 2 + 4}" text-anchor="middle" font-size="15" font-weight="600" fill="var(--dg-ink)">${fmt(v)}</text></svg>`;
+  if (o.type === 'treemap') {
+    const total = vals.reduce((a, b) => a + b, 0) || 1;
+    let x = padL;
+    vals.forEach((v, i) => {
+      const bw = Math.max(v / total * innerW - 2, 16);
+      out += `<rect x="${x}" y="${padT}" width="${bw}" height="${innerH}" rx="3" fill="${DG_PALETTE[i % 8]}" opacity="0.85"></rect>` +
+        `<text x="${x + 5}" y="${padT + 16}" font-size="9" font-weight="600" fill="#fff">${esc(fmtCompact(v))}</text>` +
+        `<text x="${x + 5}" y="${padT + 30}" font-size="8" fill="#fff" opacity="0.9">${esc(String(labs[i]).slice(0, 10))}</text>`;
+      x += bw + 2;
+    });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
   return '';
 }
 
 function renderLayout(spec) {
-  const size = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], piechart: [8, 4], scatterplot: [10, 5], combochart: [10, 4], treemap: [10, 4], gauge: [5, 3], table: [20, 5], listbox: [4, 4] };
-  const chartTypes = ['barchart', 'linechart', 'piechart', 'scatterplot', 'combochart', 'treemap', 'gauge'];
-  const cells = [];
-  (spec.sheets || []).forEach((sheet, si) => {
-    (sheet.objects || []).forEach((o, oi) => {
-      const [dc, dr] = size[o.type] || [4, 3];
-      const cs = o.colspan || dc, rs = o.rowspan || dr;
-      const isChart = chartTypes.includes(o.type);
-      const isKpi = o.type === 'kpi';
-      cells.push('<div class="gcell ' + (isKpi ? 'kpi' : isChart ? 'chart' : '') + '" id="dg-cell-' + si + '-' + oi + '" data-type="' + esc(o.type) + '" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
-        '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
-        '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' +
-        (isChart ? '<div class="ph"></div>' : '') + '</div>');
-    });
+  const skel = renderSkeleton(spec);
+  const renderedCells = specObjectCells(spec).map(({ o, si, oi, cs, rs }) => {
+    const isChart = CHART_TYPES.includes(o.type);
+    const isKpi = o.type === 'kpi';
+    const inner = isChart ? '<div class="ph"></div>' : isKpi ? '<div class="kpi-loading">…</div>' :
+      o.type === 'table' ? '<div class="tbl" data-tbl="' + si + '-' + oi + '"></div>' :
+      o.type === 'listbox' ? '<div class="lb-sample"></div>' : '';
+    return '<div class="gcell ' + (isKpi ? 'kpi' : isChart ? 'chart' : '') + '" id="dg-cell-' + si + '-' + oi + '" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
+      '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
+      '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' + inner + '</div>';
   });
-  $('#dg-layout-out').innerHTML = '<div class="dg-grid">' + cells.join('') + '</div>' +
-    '<p class="dg-note" style="margin:8px 0 0;">Лист «' + esc((spec.sheets[0] || {}).title || '') + '» · цветной эскиз; точный вид — в черновике Qlik</p>';
 
-  // данные для диаграмм: inline — локально из spec, excel — агрегаты сервера по файлу
+  $('#dg-layout-out').innerHTML =
+    '<h3 class="dg-h3">1 · Скелет раскладки (сетка 24×12)</h3>' + skel +
+    '<h3 class="dg-h3" style="margin-top:18px;">2 · Как будет выглядеть в дашборде</h3>' +
+    '<div class="dg-grid dg-grid-rendered">' + renderedCells.join('') + '</div>' +
+    '<p class="dg-note" style="margin:8px 0 0;">Отрисованный вариант — эскиз на данных вашего файла; точный вид — в черновике Qlik.</p>';
+
+  // данные и отрисовка
   previewDataFor(spec).then(pd => {
     state.previewData = pd;
-    const dimsById = {}; for (const d of spec.dimensions || []) dimsById[d.id] = d.field;
     const measById = {}; for (const m of spec.measures || []) measById[m.id] = m;
-    (spec.sheets || []).forEach((sheet, si) => (sheet.objects || []).forEach((o, oi) => {
+    specObjectCells(spec).forEach(({ o, si, oi }) => {
       const cell = document.getElementById('dg-cell-' + si + '-' + oi);
       if (!cell) return;
-      const type = o.type;
-      if (!chartTypes.includes(type)) {
-        if (type === 'kpi' && pd.sample && pd.sample.length) {
-          const numCol = (pd.fields || []).find((f, i) => pd.sample.some(r => typeof r[i] === 'number'));
-          const i = (pd.fields || []).indexOf(numCol);
-          if (numCol) cell.insertAdjacentHTML('beforeend', '<div style="font-size:15px;font-weight:600;margin-top:2px;">' + esc(String(pd.sample[0][i])) + '</div>');
+      if (CHART_TYPES.includes(o.type)) {
+        const ph = cell.querySelector('.ph'); if (ph) ph.remove();
+        const svg = renderedChartSVG(o, spec, pd);
+        if (svg) cell.insertAdjacentHTML('beforeend', svg);
+      } else if (o.type === 'kpi') {
+        const l = cell.querySelector('.kpi-loading'); if (l) l.remove();
+        const v = (pd.kpiValues || {})[o.measure];
+        cell.insertAdjacentHTML('beforeend', '<div class="kpi-value">' + esc(fmtCompact(v)) + '</div><div class="kpi-sub">' + esc(measById[o.measure]?.title || '') + '</div>');
+      } else if (o.type === 'table' && pd.sample) {
+        const t = cell.querySelector('[data-tbl]');
+        if (t && pd.fields) {
+          const head = pd.fields.map(f => '<th>' + esc(f) + '</th>').join('');
+          const body = pd.sample.slice(0, 5).map(r => '<tr>' + pd.fields.map((f, i) => '<td>' + esc(String(r[i])) + '</td>').join('') + '</tr>').join('');
+          t.innerHTML = '<table class="dg-table" style="font-size:10.5px;"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
         }
-        return;
+      } else if (o.type === 'listbox' && pd.fields) {
+        const lb = cell.querySelector('.lb-sample');
+        if (lb) lb.innerHTML = '<div class="dg-chips" style="gap:4px;">' + pd.fields.slice(0, 3).map(f => '<span class="dg-chip" style="font-size:10px;padding:2px 8px;">' + esc(f) + '</span>').join('') + '</div>';
       }
-      const svg = chartSVG(o, spec, pd, 0, 0);
-      if (svg) {
-        const ph = cell.querySelector('.ph');
-        if (ph) ph.remove();
-        cell.insertAdjacentHTML('beforeend', svg);
-      }
-    }));
+    });
     icons();
-  }).catch(() => {});
+  }).catch(e => {
+    const n = document.getElementById('dg-layout-out');
+    n.insertAdjacentHTML('beforeend', '<p class="dg-note">Предпросмотр недоступен: ' + esc(e.message) + '</p>');
+  });
 }
 
 // ── правка макета словами (SSE, живой прогресс) ──

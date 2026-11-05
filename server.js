@@ -312,15 +312,49 @@ const api = {
         const label = dv instanceof Date ? dv.toISOString().slice(0, 7) : String(dv ?? '—'); // даты → ГГГГ-ММ
         if (agg === 'count') { acc[label] = (acc[label] || 0) + 1; continue; }
         if (!cols.includes(measure) || !isNum(r[measure])) continue;
+        if (agg === 'avg') { const a = acc[label] || [0, 0]; acc[label] = [a[0] + r[measure], a[1] + 1]; continue; }
         acc[label] = (acc[label] || 0) + r[measure];
       }
       const top = Object.entries(acc)
+        .map(([label, value]) => Array.isArray(value) ? [label, value[0] / value[1]] : [label, value])
         .sort((a, b) => b[1] - a[1]).slice(0, 10)
         .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
       groups[dim + '|' + measure + '|' + (agg || 'sum')] = { labels: top.map(t => t.label), values: top.map(t => t.value) };
     }
+    // KPI: значение меры по всем строкам (Sum / Count / Count DISTINCT / Avg)
+    const kpiValues = {};
+    for (const k of body.kpis || []) {
+      const m = /^(sum|count|avg)\s*\(\s*(distinct\s+)?\[?([^\]\)]+?)\]?\s*\)/i.exec(k.formula || '');
+      if (!m) { kpiValues[k.id] = null; continue; }
+      const fn = m[1].toLowerCase(), distinct = !!m[2], field = m[3].trim();
+      if (!cols.includes(field)) { kpiValues[k.id] = null; continue; }
+      let acc = 0; const uniq = new Set();
+      if (fn === 'count') {
+        for (const r of rows) { const v = r[field]; if (v === null || v === undefined || v === '') continue; if (distinct) uniq.add(String(v)); else acc += 1; }
+        kpiValues[k.id] = distinct ? uniq.size : acc;
+      } else {
+        let sum = 0, n = 0;
+        for (const r of rows) { const v = r[field]; if (isNum(v)) { sum += v; n += 1; } }
+        kpiValues[k.id] = fn === 'avg' ? (n ? sum / n : null) : sum;
+      }
+    }
+
+    // Пузырьковые: точки {x, y, size} (до 400) по трём числовым полям
+    const scatterPoints = {};
+    for (const s of body.scatters || []) {
+      const { xF, yF, sF } = s;
+      if (!cols.includes(xF) || !cols.includes(yF)) continue;
+      const pts = [];
+      for (const r of rows) {
+        if (!isNum(r[xF]) || !isNum(r[yF])) continue;
+        pts.push({ x: r[xF], y: r[yF], size: sF && isNum(r[sF]) ? r[sF] : null });
+        if (pts.length >= 400) break;
+      }
+      scatterPoints[s.key] = pts;
+    }
+
     // сэмпл строк для таблиц и значений KPI
-    return [200, { sheet: sheetName, rowCount: rows.length, columns: cols, groups, sample: rows.slice(0, 8) }];
+    return [200, { sheet: sheetName, rowCount: rows.length, columns: cols, groups, sample: rows.slice(0, 8), kpiValues, scatterPoints }];
   },
 
   // ── ключ ИИ-провайдера: статус и установка из интерфейса ──
@@ -583,7 +617,7 @@ function serveStatic(res, urlPath) {
   let fp = path.join(PUBLIC, urlPath === '/' ? 'index.html' : urlPath);
   if (!fp.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   if (!fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { res.writeHead(404); return res.end('Not found'); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream' });
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(fp).pipe(res);
 }
 
