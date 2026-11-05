@@ -4,18 +4,22 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const crypto = require('crypto');
 
 const PORT = 4748;
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const EXAMPLES = path.join(ROOT, 'examples');
 const TMP = path.join(ROOT, 'tmp');
+const LOGS = path.join(ROOT, 'logs');
 fs.mkdirSync(TMP, { recursive: true });
+fs.mkdirSync(LOGS, { recursive: true });
 
 const { loadConfig } = require('./src/config');
 const { profileSource } = require('./src/sources');
 const { loadSpec, validateSpec } = require('./src/spec-validator');
 const privacy = require('./src/privacy');
+const qrs = require('./src/qrs');
 
 let CFG = null;
 try { CFG = loadConfig(); } catch (e) { console.warn('Конфиг не загружен: ' + e.message); }
@@ -56,6 +60,30 @@ function safeName(name) {
   return base.replace(/[^a-zA-Z0-9._\u0400-\u04FF-]/g, '_');
 }
 
+function specPathByName(specName) {
+  const name = safeName(specName);
+  if (!name.endsWith('.json')) throw new Error('Ожидается имя .json');
+  const fp = path.join(EXAMPLES, name);
+  if (!fp.startsWith(EXAMPLES)) throw new Error('Некорректный путь spec');
+  if (!fs.existsSync(fp)) throw new Error('spec не найден: ' + name);
+  return { fp, name };
+}
+
+// SHA-256 содержимого spec-файла — версия, по которой сверяется утверждение
+function specHash(fp) {
+  return crypto.createHash('sha256').update(fs.readFileSync(fp)).digest('hex');
+}
+
+function appendLog(file, entry) {
+  fs.appendFileSync(path.join(LOGS, file), JSON.stringify(entry) + '\n');
+}
+
+function readLogLines(file) {
+  const fp = path.join(LOGS, file);
+  if (!fs.existsSync(fp)) return [];
+  return fs.readFileSync(fp, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+}
+
 // ── API ──
 const api = {
   'GET /api/config': () => {
@@ -71,17 +99,14 @@ const api = {
   'GET /api/specs': () => {
     const files = fs.readdirSync(EXAMPLES).filter(f => f.endsWith('.json')).map(f => {
       const spec = JSON.parse(fs.readFileSync(path.join(EXAMPLES, f), 'utf8'));
-      return { name: f, appName: spec.appName, description: spec.description || '' };
+      return { name: f, appName: spec.appName, description: spec.description || '', hash: specHash(path.join(EXAMPLES, f)).slice(0, 8) };
     });
     return [200, { specs: files }];
   },
 
   'GET /api/spec': (req, res, url) => {
-    const name = safeName(url.searchParams.get('name'));
-    if (!name.endsWith('.json')) return [400, { error: 'Ожидается имя .json' }];
-    const fp = path.join(EXAMPLES, name);
-    if (!fp.startsWith(EXAMPLES) || !fs.existsSync(fp)) return [404, { error: 'spec не найден: ' + name }];
-    return [200, { name, spec: JSON.parse(fs.readFileSync(fp, 'utf8')) }];
+    const { fp, name } = specPathByName(url.searchParams.get('name'));
+    return [200, { name, spec: JSON.parse(fs.readFileSync(fp, 'utf8')), hash: specHash(fp) }];
   },
 
   'POST /api/check': async req => {
@@ -92,8 +117,8 @@ const api = {
 
   'POST /api/test-connection': async () => {
     if (!CFG) return [500, { error: 'config.json не найден' }];
-    const [engine, qrs] = await Promise.all([tcpCheck(CFG.host, CFG.port), tcpCheck(CFG.host, 4242)]);
-    return [200, { host: CFG.host, engine, qrs }];
+    const [engine, qrsOk] = await Promise.all([tcpCheck(CFG.host, CFG.port), tcpCheck(CFG.host, 4242)]);
+    return [200, { host: CFG.host, engine, qrs: qrsOk }];
   },
 
   // Загрузка файла из браузера: тело — бинарник файла, ?name=имя.xlsx
@@ -110,6 +135,62 @@ const api = {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     if (!body.path) return [400, { error: 'Укажите path' }];
     return profileFile(body.path, new URL('http://x/?' + (body.sheet ? 'sheet=' + encodeURIComponent(body.sheet) : '')));
+  },
+
+  // ── Публикация (QRS 4242) ──
+
+  'GET /api/streams': async () => {
+    if (!CFG) return [500, { error: 'config.json не найден' }];
+    try { return [200, { streams: await qrs.listStreams(CFG) }]; }
+    catch (e) { return [502, { error: 'QRS недоступен: ' + e.message }]; }
+  },
+
+  'GET /api/approvals': () => [200, { approvals: readLogLines('approvals.jsonl').slice(-20).reverse() }],
+
+  // Зафиксировать утверждение: {specName, approvedBy} → запись в журнал с хешем spec
+  'POST /api/approve': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!body.approvedBy || !String(body.approvedBy).trim()) return [400, { error: 'Укажите, кто утвердил' }];
+    const { fp, name } = specPathByName(body.specName);
+    const spec = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    const entry = {
+      at: new Date().toISOString(),
+      approvedBy: String(body.approvedBy).trim(),
+      specName: name,
+      appName: spec.appName,
+      hash: specHash(fp)
+    };
+    appendLog('approvals.jsonl', entry);
+    return [200, { entry }];
+  },
+
+  // Публикация: {specName, streamId} — только при утверждённой версии spec
+  'POST /api/publish': async req => {
+    if (!CFG) return [500, { error: 'config.json не найден' }];
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!body.streamId) return [400, { error: 'Укажите streamId' }];
+    const { fp, name } = specPathByName(body.specName);
+    const hash = specHash(fp);
+    const approval = readLogLines('approvals.jsonl').find(a => a.hash === hash);
+    if (!approval) {
+      return [403, { error: 'Утверждение для этой версии spec не найдено — сначала зафиксируйте утверждение (кто и когда)' }];
+    }
+    const spec = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    try {
+      const app = await qrs.findAppByName(CFG, spec.appName);
+      if (!app) return [404, { error: 'Приложение «' + spec.appName + '» не найдено — сначала соберите его (шаг «Сборка»)' }];
+      if (app.published) {
+        return [409, { error: 'Приложение уже опубликовано в стрим «' + (app.stream ? app.stream.name : '?') + '». Замена опубликованных версий — следующий шаг этапа 9.' }];
+      }
+      const published = await qrs.publishApp(CFG, app.id, body.streamId);
+      appendLog('publish.jsonl', {
+        at: new Date().toISOString(), specName: name, hash, appName: spec.appName,
+        appId: published.id, stream: published.stream, approvedBy: approval.approvedBy
+      });
+      return [200, { published }];
+    } catch (e) {
+      return [502, { error: 'QRS: ' + e.message }];
+    }
   }
 };
 
@@ -132,9 +213,8 @@ const apiBuild = {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     let spec;
     if (body.specName) {
-      const name = safeName(body.specName);
-      const fp = path.join(EXAMPLES, name);
-      if (!fp.startsWith(EXAMPLES) || !fs.existsSync(fp)) return [404, { error: 'spec не найден: ' + name }];
+      let fp;
+      try { ({ fp } = specPathByName(body.specName)); } catch (e) { return [404, { error: e.message }]; }
       spec = loadSpec(fp);
     } else if (body.spec) {
       const v = validateSpec(body.spec);

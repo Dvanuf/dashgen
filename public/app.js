@@ -1,10 +1,11 @@
-// Dashgen UI — логика: подключение к локальному API движка.
+// Dashgen UI — логика конвейера: профиль → приватность → spec → макет → сборка → публикация.
 'use strict';
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icons = () => { if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } }); };
 
-const state = { spec: null, specName: null, sourceProfile: null, safeProfile: null, config: null };
+const state = { config: null, spec: null, specName: null, specHash: null, approvals: [], streams: [] };
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -13,45 +14,48 @@ async function api(path, options) {
   return data;
 }
 
-// ── навигация ──
-document.querySelectorAll('.navbtn').forEach(btn => btn.addEventListener('click', () => {
-  document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('is-on', b === btn));
-  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'p-' + btn.dataset.step; });
+// ── навигация и статусы ──
+const navBtns = document.querySelectorAll('.dg-navbtn');
+navBtns.forEach(btn => btn.addEventListener('click', () => {
+  navBtns.forEach(b => b.classList.toggle('is-on', b === btn));
+  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-' + btn.dataset.step; });
 }));
 
 function pipeDone(names) {
-  document.querySelectorAll('.pstep').forEach(el => el.classList.toggle('done', names.includes(el.dataset.pipe)));
+  document.querySelectorAll('.dg-pipestep').forEach(el => el.classList.toggle('is-done', names.includes(el.dataset.pipe)));
 }
 
-// ── подключения / конфиг ──
+function setStatus(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text || '';
+}
+
+// ── конфиг и подключения ──
 async function loadConfig() {
   try {
     const cfg = await api('/api/config');
     state.config = cfg;
-    $('#host-chip').textContent = 'сервер: ' + cfg.host;
-    $('#user-chip').textContent = cfg.userDirectory + '\\' + cfg.userId;
-    $('#cfg-status').textContent = 'config загружен';
-    $('#cfg-status').className = 'chipstat ok';
-    renderConn(cfg);
+    $('#dg-srv-chip').innerHTML = '<i data-lucide="server" aria-hidden="true"></i> ' + esc(cfg.host);
+    $('#dg-cfg-chip').textContent = 'config загружен';
+    $('#dg-cfg-chip').className = 'dg-chipstat is-ok';
+    $('#dg-user-chip').textContent = cfg.userDirectory + '\\' + cfg.userId;
+    $('#dg-conn-host').textContent = cfg.host;
+    $('#dg-conn-ports').textContent = 'Engine ' + cfg.portEngine + ' · QRS ' + cfg.portQrs + ' · сертификаты ' + cfg.certDir;
+    $('#dg-conn-table').innerHTML = [
+      ['Host', cfg.host], ['Engine API', 'порт ' + cfg.portEngine + ' · enigma.js · схема 12.612.0'],
+      ['QRS API', 'порт ' + cfg.portQrs + ' · публикация, стримы'], ['Сертификаты', cfg.certDir],
+      ['Учётная запись', cfg.userDirectory + '\\' + cfg.userId]
+    ].map(r => '<tr><td style="color:var(--dg-mut);width:40%;">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('');
+    setStatus('dg-st-conn', '✓');
   } catch (e) {
-    $('#cfg-status').textContent = 'config.json не найден';
-    $('#cfg-status').className = 'chipstat bad';
-    $('#conn-out').innerHTML = '<div class="card note">' + esc(e.message) + '</div>';
+    $('#dg-cfg-chip').textContent = 'config.json не найден';
+    $('#dg-cfg-chip').className = 'dg-chipstat is-bad';
   }
+  icons();
 }
 
-function renderConn(cfg) {
-  $('#conn-out').innerHTML = '<div class="card"><table class="t"><tbody>' +
-    row('Host', cfg.host) + row('Engine API', 'порт ' + cfg.portEngine) +
-    row('QRS API', 'порт ' + cfg.portQrs) + row('Сертификаты', cfg.certDir) +
-    row('Учётная запись', cfg.userDirectory + '\\' + cfg.userId) +
-    row('rejectUnauthorized', String(cfg.rejectUnauthorized)) +
-    '</tbody></table></div>';
-  function row(k, v) { return '<tr><td>' + esc(k) + '</td><td>' + esc(v) + '</td></tr>'; }
-}
-
-$('#btn-test-conn').addEventListener('click', async () => {
-  const note = $('#conn-test-note');
+$('#dg-btn-test-conn').addEventListener('click', async () => {
+  const note = $('#dg-conn-test-note');
   note.textContent = 'Проверка Engine 4747 и QRS 4242…';
   try {
     const r = await api('/api/test-connection', { method: 'POST' });
@@ -59,69 +63,72 @@ $('#btn-test-conn').addEventListener('click', async () => {
   } catch (e) { note.textContent = 'Ошибка: ' + e.message; }
 });
 
-// ── источник: путь или загрузка ──
-document.querySelectorAll('.chip[data-src]').forEach(chip => chip.addEventListener('click', () => {
-  document.querySelectorAll('.chip[data-src]').forEach(c => c.classList.toggle('is-on', c === chip));
-  $('#src-path-box').classList.toggle('hidden', chip.dataset.src !== 'path');
-  $('#src-upload-box').classList.toggle('hidden', chip.dataset.src !== 'upload');
+// ── источник ──
+document.querySelectorAll('.dg-chip[data-src]').forEach(chip => chip.addEventListener('click', () => {
+  document.querySelectorAll('.dg-chip[data-src]').forEach(c => c.classList.toggle('is-on', c === chip));
+  $('#dg-src-path').classList.toggle('dg-hidden', chip.dataset.src !== 'path');
+  $('#dg-src-upload').classList.toggle('dg-hidden', chip.dataset.src !== 'upload');
 }));
 
 function renderProfile(data) {
-  state.sourceProfile = data.sourceProfile;
-  state.safeProfile = data.safeProfile;
   const sp = data.sourceProfile;
+  const banned = new Set((data.safeProfile.excludedColumns || []).map(x => x.table + '::' + x.column));
   let html = '';
   for (const t of sp.tables) {
-    html += '<div class="card"><b>' + esc(t.name) + '</b> <span class="note">· ' + t.rowCount + ' строк</span><table class="t"><thead><tr>' +
-      '<th>Колонка</th><th>Тип</th><th class="num">Уник.</th><th class="num">Проп.</th><th>Профиль для ИИ</th></tr></thead><tbody>';
-    const banned = new Set((data.safeProfile.excludedColumns || []).map(x => x.table + '::' + x.column));
+    html += '<div class="dg-card"><p class="dg-cardtitle"><i data-lucide="table" aria-hidden="true"></i>' + esc(t.name) +
+      ' <span class="dg-note" style="font-weight:400;">· ' + t.rowCount + ' строк · ' + sp.sourceType + '</span></p>' +
+      '<table class="dg-table"><thead><tr><th>Колонка</th><th>Тип</th><th class="num">Уник.</th><th class="num">Проп.</th><th>Профиль для ИИ</th></tr></thead><tbody>';
     for (const c of t.columns) {
       const isBanned = banned.has(t.name + '::' + c.name);
-      html += '<tr' + (isBanned ? ' class="banned"' : '') + '><td>' + esc(c.name) + '</td><td>' + esc(c.type) +
+      html += '<tr' + (isBanned ? ' class="is-block"' : '') + '><td>' + esc(c.name) + '</td><td>' + esc(c.type) +
         '</td><td class="num">' + (c.distinct ?? '—') + '</td><td class="num">' + (c.nulls ?? '—') + '</td><td>' +
         (isBanned ? '🔒 запрещённая колонка' : 'в профиле') + '</td></tr>';
     }
     html += '</tbody></table></div>';
   }
-  html += '<div class="row"><span class="badge badge-ok">профиль построен локально</span>' +
-    '<span class="note">Значения не покидают эту машину. В ИИ уйдёт только схема.</span></div>';
-  $('#profile-out').innerHTML = html;
+  html += '<div class="dg-rowbtn"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>профиль построен локально</span>' +
+    '<span class="dg-note">В ИИ уйдёт только схема — см. шаг «Приватность».</span></div>';
+  $('#dg-profile-out').innerHTML = html;
   renderPrivacy(data.safeProfile);
-  pipeDone(['source', 'profile']);
+  setStatus('dg-st-source', '✓'); setStatus('dg-st-privacy', '✓');
+  pipeDone(['source', 'profile', 'privacy']);
+  icons();
 }
 
 function renderPrivacy(safe) {
-  $('#privacy-out').innerHTML =
-    '<div class="card"><b>Режим schema (dry run)</b> — именно это уйдёт модели:<pre class="code">' +
-    esc(JSON.stringify(safe, null, 2)) + '</pre></div>';
-  $('#privacy-actions').style.display = 'flex';
+  $('#dg-privacy-out').innerHTML = '<pre class="dg-code">' + esc(JSON.stringify(safe, null, 2)) + '</pre>';
+  $('#dg-privacy-actions').style.display = 'flex';
+  const excl = (safe.excludedColumns || []);
+  $('#dg-priv-excluded').innerHTML = excl.length
+    ? '<p class="dg-note" style="margin:8px 0 4px;">Исключено из профиля:</p><div class="dg-chips">' +
+      excl.map(x => '<span class="dg-chip">🔒 ' + esc(x.column) + '</span>').join('') + '</div>'
+    : '';
 }
 
-$('#btn-profile-path').addEventListener('click', async () => {
-  const p = $('#src-path').value.trim();
+$('#dg-btn-profile-path').addEventListener('click', async () => {
+  const p = $('#dg-src-path-in').value.trim();
   if (!p) return;
   const body = { path: p };
-  const sheet = $('#src-sheet').value.trim();
+  const sheet = $('#dg-src-sheet-in').value.trim();
   if (sheet) body.sheet = sheet;
-  $('#profile-out').innerHTML = '<div class="card note">Профилирую…</div>';
+  $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Профилирую…</div>';
   try { renderProfile(await api('/api/profile-path', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })); }
-  catch (e) { $('#profile-out').innerHTML = '<div class="card note">Ошибка: ' + esc(e.message) + '</div>'; }
+  catch (e) { $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>'; }
 });
 
-$('#btn-profile-upload').addEventListener('click', async () => {
-  const f = $('#src-file').files[0];
+$('#dg-btn-profile-upload').addEventListener('click', async () => {
+  const f = $('#dg-src-file').files[0];
   if (!f) return;
-  $('#profile-out').innerHTML = '<div class="card note">Загружаю и профилирую…</div>';
-  try {
-    const data = await api('/api/profile?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
-    renderProfile(data);
-  } catch (e) { $('#profile-out').innerHTML = '<div class="card note">Ошибка: ' + esc(e.message) + '</div>'; }
+  $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Загружаю и профилирую…</div>';
+  try { renderProfile(await api('/api/profile?name=' + encodeURIComponent(f.name), { method: 'POST', body: f })); }
+  catch (e) { $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>'; }
 });
 
 // ── спецификация ──
 async function loadSpecList() {
   const { specs } = await api('/api/specs');
-  $('#spec-select').innerHTML = specs.map(s => '<option value="' + esc(s.name) + '">' + esc(s.appName) + '</option>').join('');
+  $('#dg-spec-select').innerHTML = specs.map(s =>
+    '<option value="' + esc(s.name) + '">' + esc(s.appName) + ' · ' + esc(s.hash) + '</option>').join('');
   if (specs.length) await loadSpec(specs[0].name);
 }
 
@@ -129,54 +136,65 @@ async function loadSpec(name) {
   const data = await api('/api/spec?name=' + encodeURIComponent(name));
   state.spec = data.spec;
   state.specName = data.name;
-  $('#spec-view').textContent = JSON.stringify(data.spec, null, 2);
-  $('#build-spec-name').textContent = data.spec.appName;
+  state.specHash = data.hash;
+  $('#dg-spec-view').textContent = JSON.stringify(data.spec, null, 2);
+  $('#dg-top-spec').textContent = data.spec.appName;
+  $('#dg-build-spec-name').textContent = data.spec.appName;
+  $('#dg-spec-hash').textContent = data.hash.slice(0, 8);
+  $('#dg-publish-hash').textContent = data.hash.slice(0, 8);
+  $('#dg-spec-check-out').innerHTML = '';
+  $('#dg-spec-badge').classList.add('dg-hidden');
+  setStatus('dg-st-spec', '');
   renderLayout(data.spec);
-  $('#spec-check-out').innerHTML = '';
+  icons();
 }
 
-$('#btn-spec-load').addEventListener('click', () => loadSpec($('#spec-select').value));
-$('#spec-select').addEventListener('change', () => loadSpec($('#spec-select').value));
+$('#dg-btn-spec-load').addEventListener('click', () => loadSpec($('#dg-spec-select').value));
+$('#dg-spec-select').addEventListener('change', () => loadSpec($('#dg-spec-select').value));
 
-$('#btn-spec-check').addEventListener('click', async () => {
+$('#dg-btn-spec-check').addEventListener('click', async () => {
   if (!state.spec) return;
   try {
     const r = await api('/api/check', { method: 'POST', body: JSON.stringify(state.spec), headers: { 'Content-Type': 'application/json' } });
-    $('#spec-check-out').innerHTML = r.ok
-      ? '<span class="badge badge-ok">схема v1 пройдена, ссылки корректны</span>'
-      : '<pre class="code err">' + esc(r.errors.join('\n')) + '</pre>';
-  } catch (e) { $('#spec-check-out').innerHTML = '<pre class="code err">' + esc(e.message) + '</pre>'; }
+    if (r.ok) {
+      $('#dg-spec-check-out').innerHTML = '<div class="dg-rowbtn" style="margin-top:10px;"><span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>схема v1 пройдена, ссылки корректны</span></div>';
+      $('#dg-spec-badge').classList.remove('dg-hidden');
+      setStatus('dg-st-spec', '✓');
+    } else {
+      $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(r.errors.join('\n')) + '</pre>';
+    }
+  } catch (e) { $('#dg-spec-check-out').innerHTML = '<pre class="dg-code is-err">' + esc(e.message) + '</pre>'; }
+  icons();
 });
 
-// ── макет: сетка 24x12 как в Qlik ──
+// ── макет ──
 function renderLayout(spec) {
+  const size = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], table: [20, 5], listbox: [4, 4] };
   const cells = [];
-  const defaultSize = { kpi: [5, 3], linechart: [10, 4], barchart: [10, 4], table: [20, 5], listbox: [4, 4] };
   for (const sheet of spec.sheets || []) {
     for (const o of sheet.objects || []) {
-      const [dc, dr] = defaultSize[o.type] || [4, 3];
+      const [dc, dr] = size[o.type] || [4, 3];
       const cs = o.colspan || dc, rs = o.rowspan || dr;
       const kind = o.type === 'kpi' ? 'kpi' : (o.type === 'linechart' || o.type === 'barchart') ? 'chart' : '';
       cells.push('<div class="gcell ' + kind + '" style="left:' + (o.col / 24 * 100) + '%;top:' + (o.row / 12 * 100) +
         '%;width:' + (cs / 24 * 100) + '%;height:' + (rs / 12 * 100) + '%;">' +
         '<div class="k">' + esc(o.type) + '</div><div class="t">' + esc(o.title || o.field || o.measure || '') + '</div>' +
-        (kind === 'chart' ? '<div class="placeholder"></div>' : '') + '</div>');
+        (kind === 'chart' ? '<div class="ph"></div>' : '') + '</div>');
     }
   }
-  $('#layout-out').innerHTML = '<div class="grid">' + cells.join('') + '</div>' +
-    '<p class="note" style="margin-top:8px;">Лист «' + esc((spec.sheets[0] || {}).title || '') + '» · предпросмотр раскладки; точный вид — после сборки в Qlik.</p>';
+  $('#dg-layout-out').innerHTML = '<div class="dg-grid">' + cells.join('') + '</div>' +
+    '<p class="dg-note" style="margin:8px 0 0;">Лист «' + esc((spec.sheets[0] || {}).title || '') + '»</p>';
 }
 
 // ── сборка ──
-$('#btn-build').addEventListener('click', async () => {
+$('#dg-btn-build').addEventListener('click', async () => {
   if (!state.spec) return;
-  const btn = $('#btn-build'), timer = $('#build-timer');
+  const btn = $('#dg-btn-build'), timer = $('#dg-build-timer');
   btn.disabled = true;
   const t0 = Date.now();
   const tick = setInterval(() => { timer.textContent = 'идёт сборка… ' + Math.round((Date.now() - t0) / 1000) + ' с'; }, 500);
-  $('#build-log').classList.remove('hidden');
-  $('#build-log').textContent = 'Подключение к Qlik и сборка…';
-  $('#verify-out').innerHTML = '';
+  $('#dg-build-log').classList.remove('dg-hidden', 'is-err');
+  $('#dg-build-log').textContent = 'Подключение к Qlik и сборка…';
   try {
     const r = await api('/api/build', {
       method: 'POST', body: JSON.stringify({ specName: state.specName }),
@@ -184,26 +202,113 @@ $('#btn-build').addEventListener('click', async () => {
     });
     clearInterval(tick);
     timer.textContent = 'готово за ' + Math.round((Date.now() - t0) / 1000) + ' с';
-    $('#build-log').textContent = r.log.join('\n');
+    $('#dg-build-log').textContent = r.log.join('\n');
+    $('#dg-build-log').classList.add('is-ok');
     renderVerify(r.verify);
-    pipeDone(['source', 'profile', 'spec', 'build']);
+    setStatus('dg-st-build', '✓');
+    pipeDone(['source', 'profile', 'privacy', 'spec', 'build']);
   } catch (e) {
     clearInterval(tick);
     timer.textContent = '';
-    $('#build-log').textContent += '\nОШИБКА: ' + e.message;
-    $('#build-log').classList.add('err');
+    $('#dg-build-log').textContent += '\nОШИБКА: ' + e.message;
+    $('#dg-build-log').classList.add('is-err');
   } finally { btn.disabled = false; }
 });
 
 function renderVerify(v) {
   if (!v) return;
-  let html = '<div class="card"><b>Verify</b> <span class="badge ' + (v.objectErrors.length ? 'badge-warn' : 'badge-ok') + '">' +
-    (v.objectErrors.length ? 'ошибок: ' + v.objectErrors.length : 'ошибок нет') + '</span><table class="t"><tbody>';
-  for (const h of v.hyperCubes) html += '<tr><td>' + esc(h.type) + '</td><td>' + esc(h.title) + '</td><td class="num">' + h.rows + '×' + h.cols + '</td></tr>';
-  if (v.expectedRows !== undefined) html += '<tr><td>Строк в модели</td><td>' + v.modelRows + ' из ' + v.expectedRows + '</td><td>' + (v.rowsMatch ? '✓ совпадает' : '✗ РАСХОЖДЕНИЕ') + '</td></tr>';
-  html += '</tbody></table></div>';
-  $('#verify-out').innerHTML = html;
+  const okRows = [];
+  for (const h of v.hyperCubes) okRows.push('<li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>' +
+    esc(h.type) + ' «' + esc(h.title) + '»: <b>' + h.rows + '×' + h.cols + '</b></span></li>');
+  if (v.objectErrors.length) for (const e of v.objectErrors) okRows.push('<li><span class="ic" style="background:color-mix(in srgb,var(--dg-bad) 15%,transparent);color:var(--dg-bad);"><i data-lucide="x" aria-hidden="true"></i></span><span>' + esc(e.type) + ' «' + esc(e.title) + '»: ' + esc(e.error) + '</span></li>');
+  if (v.expectedRows !== undefined) okRows.push('<li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>Сверка строк: <b>' + v.modelRows + ' / ' + v.expectedRows + '</b> — ' + (v.rowsMatch ? 'совпадает' : 'РАСХОЖДЕНИЕ') + '</span></li>');
+  $('#dg-verify-out').innerHTML = '<div class="dg-card"><p class="dg-cardtitle"><i data-lucide="list-checks" aria-hidden="true"></i>Проверка перед публикацией ' +
+    '<span class="dg-badge ' + (v.objectErrors.length ? 'dg-badge--warn' : 'dg-badge--ok') + '" style="margin-left:auto;">' +
+    (v.objectErrors.length ? 'ошибок: ' + v.objectErrors.length : 'расхождений нет') + '</span></p><ul class="dg-checks">' + okRows.join('') + '</ul>' +
+    '<div class="dg-rowbtn"><a class="dg-btn" href="https://' + esc(state.config ? state.config.host : '') + '/hub" target="_blank" rel="noopener"><i data-lucide="external-link" aria-hidden="true"></i>Открыть в Hub</a></div></div>';
+  icons();
 }
 
+// ── публикация ──
+async function loadStreams() {
+  const sel = $('#dg-stream-select');
+  try {
+    const r = await api('/api/streams');
+    state.streams = r.streams;
+    sel.innerHTML = r.streams.map(s => '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>').join('');
+  } catch (e) {
+    sel.innerHTML = '<option value="">— нет доступа к QRS —</option>';
+    $('#dg-publish-result').textContent = e.message;
+  }
+}
+
+async function loadApprovals() {
+  const r = await api('/api/approvals');
+  state.approvals = r.approvals;
+  const rows = r.approvals.map(a =>
+    '<tr><td>' + esc(a.specName) + '</td><td>' + esc(a.approvedBy) + '</td><td>' + esc((a.at || '').slice(0, 16).replace('T', ' ')) + '</td><td class="dg-mono">' + esc((a.hash || '').slice(0, 8)) + '</td></tr>').join('');
+  $('#dg-approvals-out').innerHTML = rows
+    ? '<table class="dg-table"><thead><tr><th>Spec</th><th>Утвердил</th><th>Когда</th><th>Хеш</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    : '<p class="dg-note">Утверждений пока нет.</p>';
+  updateApprovalBadge();
+}
+
+function currentSpecApproved() {
+  return state.specHash && state.approvals.some(a => a.hash === state.specHash);
+}
+
+function updateApprovalBadge() {
+  const badge = $('#dg-approval-badge'), btn = $('#dg-btn-publish');
+  if (!state.specHash) { badge.textContent = 'spec не выбран'; return; }
+  if (currentSpecApproved()) {
+    badge.textContent = 'утверждено';
+    badge.className = 'dg-badge dg-badge--ok';
+    btn.disabled = false;
+    setStatus('dg-st-publish', '');
+  } else {
+    badge.textContent = 'ожидает утверждения';
+    badge.className = 'dg-badge dg-badge--warn';
+    btn.disabled = true;
+    setStatus('dg-st-publish', '🔒');
+  }
+}
+
+$('#dg-btn-approve').addEventListener('click', async () => {
+  const by = $('#dg-approve-by').value.trim();
+  if (!by || !state.specName) return;
+  try {
+    await api('/api/approve', { method: 'POST', body: JSON.stringify({ specName: state.specName, approvedBy: by }), headers: { 'Content-Type': 'application/json' } });
+    $('#dg-approve-by').value = '';
+    await loadApprovals();
+  } catch (e) { $('#dg-publish-result').textContent = 'Ошибка: ' + e.message; }
+});
+
+$('#dg-btn-streams').addEventListener('click', loadStreams);
+
+$('#dg-btn-publish').addEventListener('click', async () => {
+  if (!state.specName || !$('#dg-stream-select').value) return;
+  const btn = $('#dg-btn-publish');
+  btn.disabled = true;
+  $('#dg-publish-result').textContent = 'Публикую через QRS…';
+  try {
+    const r = await api('/api/publish', {
+      method: 'POST', body: JSON.stringify({ specName: state.specName, streamId: $('#dg-stream-select').value }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const st = r.published.stream || {};
+    $('#dg-publish-result').innerHTML = '<span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>опубликовано в стрим «' + esc(st.name || '') + '»</span>';
+    pipeDone(['source', 'profile', 'privacy', 'spec', 'build', 'publish']);
+    setStatus('dg-st-publish', '✓');
+  } catch (e) {
+    $('#dg-publish-result').textContent = 'Ошибка: ' + e.message;
+  } finally { btn.disabled = false; updateApprovalBadge(); icons(); }
+});
+
 // ── старт ──
-loadConfig().then(loadSpecList).catch(e => console.warn(e));
+(async () => {
+  await loadConfig();
+  await loadSpecList().catch(e => console.warn(e));
+  await loadApprovals().catch(e => console.warn(e));
+  await loadStreams().catch(e => console.warn(e));
+  icons();
+})();

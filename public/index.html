@@ -7,135 +7,216 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
-  <header class="topbar">
-    <div class="brand"><span class="logo" aria-hidden="true"></span>Dashgen</div>
-    <div class="file"><span id="host-chip">сервер: …</span></div>
-    <span class="chip" id="cfg-status">…</span>
-    <div class="push"><span class="user" id="user-chip"></span></div>
+<div id="dg-app">
+
+  <header class="dg-topbar">
+    <div class="dg-brand"><span class="dg-logo" aria-hidden="true"></span>Dashgen</div>
+    <div class="dg-file"><i data-lucide="file-spreadsheet" aria-hidden="true"></i><span id="dg-top-spec">spec не выбран</span></div>
+    <button class="dg-chipstat" id="dg-srv-chip" type="button" data-tooltip="Окружение: куда собираются черновики и публикуются дашборды"><i data-lucide="server" aria-hidden="true"></i> сервер: …</button>
+    <span class="dg-chipstat" id="dg-cfg-chip">…</span>
+    <div class="dg-push dg-user"><i data-lucide="user-round" aria-hidden="true"></i><span id="dg-user-chip"></span></div>
   </header>
 
-  <div class="pipe" aria-hidden="true">
-    <span class="pstep" data-pipe="source"><span class="dot"></span>Источник</span>
-    <span class="pstep" data-pipe="profile"><span class="dot"></span>Профиль</span>
-    <span class="pstep" data-pipe="privacy"><span class="dot"></span>Приватность</span>
-    <span class="gate">в ИИ уходит только профиль</span>
-    <span class="pstep" data-pipe="spec"><span class="dot"></span>Спецификация</span>
-    <span class="gate">внутренний контур</span>
-    <span class="pstep" data-pipe="build"><span class="dot"></span>Сборка</span>
-    <span class="pstep"><span class="dot"></span>Публикация</span>
+  <div class="dg-pipe">
+    <span class="dg-pipestep" data-pipe="source"><span class="dg-dot"></span>Источник</span>
+    <span class="dg-pipestep" data-pipe="profile"><span class="dg-dot"></span>Профиль</span>
+    <span class="dg-pipestep" data-pipe="privacy"><span class="dg-dot"></span>Приватность</span>
+    <span class="dg-gate"><i data-lucide="lock" aria-hidden="true"></i>в ИИ уходит только профиль</span>
+    <span class="dg-pipestep" data-pipe="spec"><span class="dg-dot"></span>Спецификация</span>
+    <span class="dg-gate"><i data-lucide="server" aria-hidden="true"></i>внутренний контур</span>
+    <span class="dg-pipestep" data-pipe="build"><span class="dg-dot"></span>Сборка</span>
+    <span class="dg-pipestep" data-pipe="publish"><span class="dg-dot"></span>Публикация</span>
   </div>
 
-  <div class="body">
-    <nav class="nav" id="nav">
-      <button class="navbtn is-on" data-step="source" type="button">Источник</button>
-      <button class="navbtn" data-step="privacy" type="button">Приватность</button>
-      <button class="navbtn" data-step="spec" type="button">Спецификация</button>
-      <button class="navbtn" data-step="layout" type="button">Макет</button>
-      <button class="navbtn" data-step="build" type="button">Сборка и проверка</button>
-      <button class="navbtn" data-step="publish" type="button">Публикация</button>
-      <button class="navbtn navbtn-cfg" data-step="conn" type="button">Подключения</button>
-      <div class="navfoot">Данные читаются локально.<br>Облако видит только профиль без значений.</div>
+  <div class="dg-body">
+    <nav class="dg-nav" id="dg-nav">
+      <button class="dg-navbtn is-on" data-step="source" type="button"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>Источник<span class="dg-st" id="dg-st-source"></span></button>
+      <button class="dg-navbtn" data-step="privacy" type="button"><i data-lucide="shield-check" aria-hidden="true"></i>Приватность<span class="dg-st" id="dg-st-privacy"></span></button>
+      <button class="dg-navbtn" data-step="spec" type="button"><i data-lucide="braces" aria-hidden="true"></i>Спецификация<span class="dg-st" id="dg-st-spec"></span></button>
+      <button class="dg-navbtn" data-step="layout" type="button"><i data-lucide="layout-template" aria-hidden="true"></i>Макет<span class="dg-st"></span></button>
+      <button class="dg-navbtn" data-step="build" type="button"><i data-lucide="layers" aria-hidden="true"></i>Сборка и проверка<span class="dg-st" id="dg-st-build"></span></button>
+      <button class="dg-navbtn" data-step="publish" type="button"><i data-lucide="rocket" aria-hidden="true"></i>Публикация<span class="dg-st" id="dg-st-publish">🔒</span></button>
+      <button class="dg-navbtn dg-navbtn--cfg" data-step="conn" type="button"><i data-lucide="plug" aria-hidden="true"></i>Подключения<span class="dg-st" id="dg-st-conn"></span></button>
+      <div class="dg-navfoot">Данные читаются локально.<br>Облако видит только профиль без значений.<br>Dashgen 0.1 · интерфейс конвейера</div>
     </nav>
 
-    <main class="main">
+    <main class="dg-main">
 
       <!-- Источник -->
-      <section class="panel" id="p-source">
-        <h2>Источник данных</h2>
-        <p class="sub">Файл на этом Mac или загрузка из браузера. Профиль строится локально.</p>
-        <div class="chips">
-          <button class="chip is-on" data-src="path" type="button">Путь на этом Mac</button>
-          <button class="chip" data-src="upload" type="button">Загрузить файл</button>
+      <section class="dg-panel" id="dg-p-source">
+        <h2 class="dg-h">Источник данных</h2>
+        <p class="dg-sub">Адаптеры: Excel и QVD. Профиль строится локально, значения не покидают эту машину.</p>
+        <div class="dg-chips" style="margin-bottom:14px;">
+          <button class="dg-chip is-on" data-src="path" type="button"><i data-lucide="folder-open" aria-hidden="true"></i>Путь на этом Mac</button>
+          <button class="dg-chip" data-src="upload" type="button"><i data-lucide="upload" aria-hidden="true"></i>Загрузить файл</button>
         </div>
-        <div class="card" id="src-path-box">
-          <label class="lbl" for="src-path">Путь к .xlsx или .qvd</label>
-          <input class="input" id="src-path" type="text" placeholder="/Users/…/orders.xlsx">
-          <div class="row" style="margin-top:8px;">
-            <input class="input input-s" id="src-sheet" type="text" placeholder="Лист (для Excel, необязательно)">
-            <button class="btn btn-p" id="btn-profile-path" type="button">Профилировать</button>
+        <div class="dg-card" id="dg-src-path">
+          <p class="dg-cardtitle"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>Файл .xlsx или .qvd</p>
+          <div class="dg-rowbtn" style="margin-top:2px;">
+            <input class="dg-input" id="dg-src-path-in" type="text" placeholder="/Users/…/orders.xlsx" style="flex:2;">
+            <input class="dg-input" id="dg-src-sheet-in" type="text" placeholder="Лист (необязательно)" style="flex:1;">
+            <button class="dg-btn dg-btn--p" id="dg-btn-profile-path" type="button"><i data-lucide="table" aria-hidden="true"></i>Профилировать</button>
           </div>
         </div>
-        <div class="card hidden" id="src-upload-box">
-          <label class="lbl" for="src-file">Файл .xlsx или .qvd</label>
-          <input id="src-file" type="file" accept=".xlsx,.qvd">
-          <div class="row" style="margin-top:8px;">
-            <button class="btn btn-p" id="btn-profile-upload" type="button">Загрузить и профилировать</button>
-          </div>
+        <div class="dg-card dg-hidden" id="dg-src-upload">
+          <p class="dg-cardtitle"><i data-lucide="upload" aria-hidden="true"></i>Файл с этого компьютера</p>
+          <input id="dg-src-file" type="file" accept=".xlsx,.qvd">
+          <div class="dg-rowbtn"><button class="dg-btn dg-btn--p" id="dg-btn-profile-upload" type="button"><i data-lucide="table" aria-hidden="true"></i>Загрузить и профилировать</button></div>
         </div>
-        <div id="profile-out"></div>
+        <div id="dg-profile-out"></div>
       </section>
 
       <!-- Приватность -->
-      <section class="panel" id="p-privacy" hidden>
-        <h2>Приватность</h2>
-        <p class="sub">Граница контура: модели уйдёт только то, что ниже. Значений нет.</p>
-        <div id="privacy-out"><div class="card note">Сначала профилируйте источник на шаге «Источник».</div></div>
-        <div class="row" id="privacy-actions" style="display:none;">
-          <button class="btn btn-p" type="button" disabled data-tooltip="ИИ-провайдер подключается на этапе 5">Отправить профиль в ИИ</button>
-          <span class="note">Dry run: отправка не выполняется. Журнал ведётся локально (logs/).</span>
+      <section class="dg-panel" id="dg-p-privacy" hidden>
+        <h2 class="dg-h">Приватность</h2>
+        <p class="dg-sub">Граница контура: дальше этого экрана данные не проходят — модель получит только то, что показано справа.</p>
+        <div class="dg-grid2 dg-grid2--wide">
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="shield-check" aria-hidden="true"></i>Режим профиля</p>
+            <label class="dg-radio"><input type="radio" name="dg-priv" value="schema" checked><span><span class="t">schema — по умолчанию</span><br><span class="d">Имена листов и колонок, типы, число строк и уникальных значений. Значений нет.</span></span></label>
+            <label class="dg-radio"><input type="radio" name="dg-priv" value="synthetic" disabled><span><span class="t">synthetic</span><br><span class="d">Выдуманные значения нужного типа — этап 3.</span></span></label>
+            <label class="dg-radio"><input type="radio" name="dg-priv" value="tokenized" disabled><span><span class="t">tokenized</span><br><span class="d">Имена заменены на TABLE_A, COL_3 — этап 3.</span></span></label>
+            <label class="dg-radio"><input type="radio" name="dg-priv" value="local" disabled><span><span class="t">local</span><br><span class="d">Локальная модель, ничего не уходит наружу — этап 5.</span></span></label>
+            <div id="dg-priv-excluded"></div>
+          </div>
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="eye" aria-hidden="true"></i>Dry run — именно это уйдёт модели</p>
+            <div id="dg-privacy-out"><p class="dg-note">Сначала профилируйте источник на шаге «Источник».</p></div>
+            <div class="dg-rowbtn" id="dg-privacy-actions" style="display:none;">
+              <button class="dg-btn dg-btn--p" type="button" disabled data-tooltip="ИИ-провайдер подключается на этапе 5">Подтвердить и отправить профиль</button>
+              <span class="dg-note">Dry run: отправка не выполняется. Журнал — logs/privacy-send.jsonl</span>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- Спецификация -->
-      <section class="panel" id="p-spec" hidden>
-        <h2>Спецификация (spec.json)</h2>
-        <p class="sub">Контракт между вами, ИИ и сборщиком. Схема v1: блок sources, меры, измерения, листы.</p>
-        <div class="row">
-          <select class="input input-s" id="spec-select"></select>
-          <button class="btn" id="btn-spec-load" type="button">Открыть</button>
-          <button class="btn btn-p" id="btn-spec-check" type="button">Проверить схему</button>
+      <section class="dg-panel" id="dg-p-spec" hidden>
+        <h2 class="dg-h">Спецификация (spec.json)</h2>
+        <p class="dg-sub">Единственный контракт между вами, ИИ и сборщиком. Схема v1: блок sources, меры, измерения, листы 24×12.</p>
+        <div class="dg-grid2 dg-grid2--wide">
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="list" aria-hidden="true"></i>Доступные спецификации</p>
+            <div class="dg-rowbtn" style="margin-top:0;">
+              <select class="dg-input" id="dg-spec-select" style="flex:1;"></select>
+            </div>
+            <div class="dg-rowbtn">
+              <button class="dg-btn" id="dg-btn-spec-load" type="button"><i data-lucide="refresh-cw" aria-hidden="true"></i>Открыть</button>
+              <button class="dg-btn dg-btn--p" id="dg-btn-spec-check" type="button"><i data-lucide="shield-check" aria-hidden="true"></i>Проверить схему</button>
+            </div>
+            <div id="dg-spec-check-out"></div>
+            <p class="dg-note" style="margin-top:10px;">Хеш версии: <b id="dg-spec-hash" class="dg-mono">—</b> · по нему сверяется утверждение перед публикацией.</p>
+          </div>
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="braces" aria-hidden="true"></i>spec.json <span class="dg-badge dg-badge--ok dg-hidden" id="dg-spec-badge"><i data-lucide="check" aria-hidden="true"></i>схема пройдена</span></p>
+            <pre class="dg-code" id="dg-spec-view">…</pre>
+          </div>
         </div>
-        <div id="spec-check-out"></div>
-        <pre class="code" id="spec-view">…</pre>
       </section>
 
       <!-- Макет -->
-      <section class="panel" id="p-layout" hidden>
-        <h2>Макет из спецификации</h2>
-        <p class="sub">Сетка 24×12, как в Qlik. Раскладку задают col/row/colspan/rowspan в spec.</p>
-        <div id="layout-out"><div class="card note">Откройте spec на шаге «Спецификация».</div></div>
+      <section class="dg-panel" id="dg-p-layout" hidden>
+        <h2 class="dg-h">Макет из спецификации</h2>
+        <p class="dg-sub" style="margin-bottom:10px;">Сетка 24×12, как в Qlik. Раскладку задают col/row/colspan/rowspan; архетипы листов — этап «Дизайн-система».</p>
+        <div class="dg-warnstrip"><i data-lucide="flask-conical" aria-hidden="true"></i>Предпросмотр раскладки · точный вид с данными — после сборки в Qlik</div>
+        <div id="dg-layout-out"></div>
+        <div class="dg-card" style="margin-top:12px;">
+          <p class="dg-cardtitle"><i data-lucide="repeat" aria-hidden="true"></i>Как меняется дашборд <span class="dg-note" style="margin-left:auto;font-weight:400;">spec.json — единственный контракт; интерфейс и Qlik руками не правятся</span></p>
+          <div class="dg-flow">
+            <span class="dg-flowstep"><span class="dg-fnum">1</span>Правка словами</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep is-ai"><span class="dg-fnum">2</span>ИИ готовит патч spec</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">3</span>Валидатор</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">4</span>Макет обновился</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">5</span>Черновик пересобран</span>
+            <span class="dg-flarrow">→</span>
+            <span class="dg-flowstep"><span class="dg-fnum">6</span>Повторное утверждение</span>
+          </div>
+        </div>
       </section>
 
       <!-- Сборка -->
-      <section class="panel" id="p-build" hidden>
-        <h2>Сборка и проверка</h2>
-        <p class="sub">Приложение собирается в Qlik по spec, затем verify: ошибки объектов и сверка строк. Повторная сборка заменяет приложение с тем же именем.</p>
-        <div class="row">
-          <span class="note">Spec:</span><b id="build-spec-name">—</b>
-          <button class="btn btn-p" id="btn-build" type="button">Собрать в Qlik</button>
-          <span class="note" id="build-timer"></span>
+      <section class="dg-panel" id="dg-p-build" hidden>
+        <h2 class="dg-h">Сборка и проверка</h2>
+        <p class="dg-sub">Черновик в личной области Work, виден автору. Повторная сборка заменяет приложение с тем же именем.</p>
+        <div class="dg-rowbtn">
+          <span class="dg-note">Spec:</span><b id="dg-build-spec-name">—</b>
+          <button class="dg-btn dg-btn--p" id="dg-btn-build" type="button"><i data-lucide="layers" aria-hidden="true"></i>Собрать черновик в Qlik</button>
+          <span class="dg-note" id="dg-build-timer"></span>
         </div>
-        <pre class="code hidden" id="build-log"></pre>
-        <div id="verify-out"></div>
+        <pre class="dg-code dg-hidden" id="dg-build-log"></pre>
+        <div id="dg-verify-out"></div>
       </section>
 
       <!-- Публикация -->
-      <section class="panel" id="p-publish" hidden>
-        <h2>Публикация</h2>
-        <p class="sub">Черновик → утверждение → публикация в стрим (этап 9, через QRS 4242).</p>
-        <div class="card">
-          <div class="row"><span class="badge badge-warn">🔒 заблокировано</span>
-          <span class="note">Требуется утверждение и реализация QRS-модуля (порт 4242 доступен — проверено).</span></div>
+      <section class="dg-panel" id="dg-p-publish" hidden>
+        <h2 class="dg-h">Публикация</h2>
+        <p class="dg-sub">Замена опубликованной версии — только через журнал утверждений. Публикуется собранный и утверждённый черновик.</p>
+        <div class="dg-grid2">
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="stamp" aria-hidden="true"></i>Журнал утверждений</p>
+            <div id="dg-approvals-out"><p class="dg-note">…</p></div>
+            <div class="dg-rowbtn" style="margin-top:10px;">
+              <input class="dg-input" id="dg-approve-by" type="text" placeholder="Кто утвердил (ФИО)" style="flex:1;">
+              <button class="dg-btn" id="dg-btn-approve" type="button"><i data-lucide="stamp" aria-hidden="true"></i>Записать утверждение</button>
+            </div>
+            <p class="dg-note" style="margin-top:8px;">Утверждение привязывается к хешу версии spec (<span class="dg-mono" id="dg-publish-hash">—</span>). Смена spec — новое утверждение.</p>
+          </div>
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="rocket" aria-hidden="true"></i>Параметры выпуска</p>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+              <label class="dg-note" for="dg-stream-select">Стрим:</label>
+              <select class="dg-input" id="dg-stream-select" style="flex:1;"></select>
+              <button class="dg-btn" id="dg-btn-streams" type="button" data-tooltip="Обновить список стримов из QRS"><i data-lucide="refresh-cw" aria-hidden="true"></i></button>
+            </div>
+            <p class="dg-note">Статус: <span class="dg-badge dg-badge--warn" id="dg-approval-badge">ожидает утверждения</span></p>
+            <p class="dg-note" id="dg-publish-result"></p>
+            <div class="dg-rowbtn">
+              <button class="dg-btn dg-btn--p" id="dg-btn-publish" type="button" disabled><i data-lucide="rocket" aria-hidden="true"></i>Опубликовать</button>
+              <span class="dg-note">Требуется утверждение текущей версии spec</span>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- Подключения -->
-      <section class="panel" id="p-conn" hidden>
-        <h2>Подключения</h2>
-        <p class="sub">Окружение Qlik Sense из config.json. То, что раньше правилось в CONFIG скрипта.</p>
-        <div id="conn-out"></div>
-        <div class="row" style="margin-top:10px;">
-          <button class="btn btn-p" id="btn-test-conn" type="button">Проверить связь</button>
-          <span class="note" id="conn-test-note"></span>
+      <section class="dg-panel" id="dg-p-conn" hidden>
+        <h2 class="dg-h">Подключения</h2>
+        <p class="dg-sub">Окружение Qlik Sense из config.json. То, что раньше правилось в CONFIG скрипта.</p>
+        <div class="dg-envrow is-on">
+          <i data-lucide="server" aria-hidden="true"></i>
+          <span><b style="font-weight:600;" id="dg-conn-host">…</b><br><span class="d" id="dg-conn-ports"></span></span>
+          <span class="dg-badge dg-badge--ok"><i data-lucide="check" aria-hidden="true"></i>активно</span>
+        </div>
+        <div class="dg-grid2" style="margin-top:12px;">
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="settings-2" aria-hidden="true"></i>Параметры окружения</p>
+            <table class="dg-table"><tbody id="dg-conn-table"></tbody></table>
+            <div class="dg-rowbtn">
+              <button class="dg-btn dg-btn--p" id="dg-btn-test-conn" type="button"><i data-lucide="activity" aria-hidden="true"></i>Проверить связь</button>
+              <span class="dg-note" id="dg-conn-test-note"></span>
+            </div>
+          </div>
+          <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="lock" aria-hidden="true"></i>Безопасность подключения</p>
+            <ul class="dg-checks">
+              <li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>Сертификаты из QMC, ключи вне git, chmod 600</span></li>
+              <li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>Паролей и ключей в интерфейсе нет — только пути и статусы</span></li>
+              <li><span class="ic"><i data-lucide="check" aria-hidden="true"></i></span><span>Сервер интерфейса слушает только 127.0.0.1</span></li>
+            </ul>
+          </div>
         </div>
       </section>
 
     </main>
   </div>
 
-  <footer class="foot">Данные не покидают контур · spec.json — контракт между ИИ и сборкой · Dashgen 0.1</footer>
+  <footer class="dg-foot">Данные не покидают контур · ИИ получает только профиль · spec.json — контракт между ИИ и сборкой</footer>
 </div>
+<script src="https://unpkg.com/lucide@0.462.0/dist/umd/lucide.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
