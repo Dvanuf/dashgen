@@ -83,6 +83,12 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, log = (
     }
     const v = validateSpec(spec);
     if (v.ok) {
+      // Режим реального Excel обязателен: если модель всё же вернула inline — бракуем с объяснением
+      if (excelLib && (!spec.source || spec.source.type !== 'excel')) {
+        log('Попытка ' + attempt + ': нужен source.type="excel" (реальные данные), модель вернула ' + (spec.source ? spec.source.type : 'без source') + ' — возвращаю на исправление');
+        prompt = repairPrompt(spec, ['режим реального Excel: source должен быть {"type":"excel","path":"' + excelLib + '","sheet":"<лист>"}, inline и синтетика запрещены']);
+        continue;
+      }
       log('Попытка ' + attempt + ': spec прошёл схему v1 и проверку ссылок');
       return { spec, attempts: attempt };
     }

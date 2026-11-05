@@ -562,8 +562,11 @@ $('#dg-btn-gen-excel').addEventListener('click', async () => {
   navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === 'spec'));
   document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-spec'; });
   btn.disabled = true;
-  const excelLib = 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + file;
-  progressStart(logEl, 'Отправляю профиль модели (режим реального Excel)…');
+  // поле принимает и имя файла, и полный путь lib:// — не задваиваем префикс
+  const excelLib = file.startsWith('lib://')
+    ? file
+    : 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + file;
+  progressStart(logEl, 'Отправляю профиль модели (режим реального Excel: ' + excelLib + ')…');
   try {
     const r = await apiStream('/api/generate-spec', {
       profile: state.safeProfile,
