@@ -1,6 +1,6 @@
 {
   "name": "dashgen",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Сборка дашбордов Qlik Sense из Excel с ИИ",
   "private": true,
   "main": "desktop/main.js",
