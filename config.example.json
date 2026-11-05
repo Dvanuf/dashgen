@@ -5,6 +5,11 @@
   "userDirectory": "DOMAIN",
   "userId": "svc_dashgen",
   "rejectUnauthorized": false,
+  "ai": {
+    "baseUrl": "https://api.z.ai/api/paas/v4",
+    "model": "glm-4.6",
+    "temperature": 0
+  },
   "privacy": {
     "bannedColumns": ["ФИО", "ИНН", "Телефон", "Паспорт", "Email", "Контрагент"],
     "bannedPatterns": ["инн", "телефон", "фио", "паспорт", "e-?mail", "контрагент"]

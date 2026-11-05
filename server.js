@@ -92,6 +92,7 @@ const api = {
       host: CFG.host, portEngine: CFG.port, portQrs: 4242,
       userDirectory: CFG.userDirectory, userId: CFG.userId,
       certDir: CFG.certDir, rejectUnauthorized: CFG.rejectUnauthorized,
+      ai: CFG.ai ? { baseUrl: CFG.ai.baseUrl, model: CFG.ai.model } : null,
       privacy: CFG.privacy
     }];
   },
@@ -113,6 +114,28 @@ const api = {
     const body = await readBody(req);
     const result = validateSpec(JSON.parse(body.toString('utf8')));
     return [200, result];
+  },
+
+  // Генерация spec ИИ-моделью: {profile (safeProfile!), description}
+  // Граница: принимается только безопасный профиль из UI, без значений.
+  'POST /api/generate-spec': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!body.profile || !body.profile.tables) return [400, { error: 'Нужен безопасный профиль (сначала профилируйте источник)' }];
+    if (!body.description || !String(body.description).trim()) return [400, { error: 'Опишите отчёт словами — что показывать' }];
+    if (body.profile.mode !== 'schema') return [400, { error: 'Ожидается профиль режима schema (вывод privacy), а не SourceProfile' }];
+    const aiCfg = (CFG && CFG.ai) || null;
+    if (!aiCfg) return [500, { error: 'В config.json нет блока ai (provider/baseUrl/model)' }];
+    const logLines = [];
+    const { generateSpec } = require('./src/ai/generate-spec');
+    try {
+      const r = await generateSpec({ safeProfile: body.profile, description: String(body.description), aiCfg, log: l => logLines.push(l) });
+      privacy.journal(body.profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
+      logLines.push('Отправка профиля записана в журнал (logs/privacy-send.jsonl)');
+      return [200, { spec: r.spec, attempts: r.attempts, log: logLines }];
+    } catch (e) {
+      logLines.push('ОШИБКА: ' + e.message);
+      return [502, { error: e.message, log: logLines }];
+    }
   },
 
   'POST /api/test-connection': async () => {

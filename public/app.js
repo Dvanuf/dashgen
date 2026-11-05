@@ -44,8 +44,10 @@ async function loadConfig() {
     $('#dg-conn-table').innerHTML = [
       ['Host', cfg.host], ['Engine API', 'порт ' + cfg.portEngine + ' · enigma.js · схема 12.612.0'],
       ['QRS API', 'порт ' + cfg.portQrs + ' · публикация, стримы'], ['Сертификаты', cfg.certDir],
-      ['Учётная запись', cfg.userDirectory + '\\' + cfg.userId]
+      ['Учётная запись', cfg.userDirectory + '\\' + cfg.userId],
+      ['ИИ-провайдер', cfg.ai ? cfg.ai.model + ' · ' + cfg.ai.baseUrl : 'не задан (блок ai в config.json)']
     ].map(r => '<tr><td style="color:var(--dg-mut);width:40%;">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('');
+    $('#dg-ai-model').textContent = cfg.ai && cfg.ai.model ? cfg.ai.model : 'не задан';
     setStatus('dg-st-conn', '✓');
   } catch (e) {
     $('#dg-cfg-chip').textContent = 'config.json не найден';
@@ -150,6 +152,36 @@ async function loadSpec(name) {
 }
 
 $('#dg-btn-spec-load').addEventListener('click', () => loadSpec($('#dg-spec-select').value));
+
+// ── проект ИИ: генерация spec ──
+$('#dg-btn-ai-gen').addEventListener('click', async () => {
+  const btn = $('#dg-btn-ai-gen'), logEl = $('#dg-ai-log');
+  const desc = $('#dg-ai-desc').value.trim();
+  if (!desc) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Опишите отчёт — что показывать.'; return; }
+  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте источник на шаге «Источник».'; return; }
+  btn.disabled = true;
+  logEl.classList.remove('dg-hidden', 'is-err');
+  logEl.textContent = 'Отправляю безопасный профиль в модель (только schema, без значений)…';
+  try {
+    const r = await api('/api/generate-spec', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: state.safeProfile, description: desc })
+    });
+    logEl.textContent = r.log.join('\n');
+    // сгенерированный spec показываем и делаем текущим: можно проверить, собрать, утвердить
+    state.spec = r.spec;
+    state.specName = null;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    $('#dg-top-spec').textContent = r.spec.appName;
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (сгенерирован ИИ, не сохранён)';
+    setStatus('dg-st-spec', '✓');
+    $('#dg-spec-check-out').innerHTML = '<span class="dg-note">Сгенерирован за ' + r.attempts + ' попыт. Нажмите «Проверить схему» или соберите черновик. Чтобы сохранить: добавьте файл в examples/.</span>';
+    pipeDone(['source', 'profile', 'privacy', 'spec']);
+  } catch (e) {
+    logEl.classList.add('is-err');
+    logEl.textContent += '\nОШИБКА: ' + e.message + (e.log ? '\n' + e.log.join('\n') : '');
+  } finally { btn.disabled = false; }
+});
 $('#dg-spec-select').addEventListener('change', () => loadSpec($('#dg-spec-select').value));
 
 $('#dg-btn-spec-check').addEventListener('click', async () => {

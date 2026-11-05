@@ -96,6 +96,14 @@
         <p class="dg-sub">Единственный контракт между вами, ИИ и сборщиком. Схема v1: блок sources, меры, измерения, листы 24×12.</p>
         <div class="dg-grid2 dg-grid2--wide">
           <div class="dg-card">
+            <p class="dg-cardtitle"><i data-lucide="pen-line" aria-hidden="true"></i>Проект ИИ: сгенерировать spec по описанию</p>
+            <textarea class="dg-input" id="dg-ai-desc" rows="3" style="width:100%;min-height:70px;resize:vertical;" placeholder="Отчёт по продажам за 2026: выручка и заказы по месяцам, топ категорий, разбивка по регионам. 4 KPI: выручка, заказы, средний чек, количество. Без реальных цифр и имён клиентов."></textarea>
+            <div class="dg-rowbtn">
+              <button class="dg-btn dg-btn--p" id="dg-btn-ai-gen" type="button"><i data-lucide="sparkles" aria-hidden="true"></i>Сгенерировать spec из профиля</button>
+              <span class="dg-note">Провайдер: <b id="dg-ai-model">—</b> · t = 0 · уходит только профиль schema</span>
+            </div>
+            <pre class="dg-code dg-hidden" id="dg-ai-log"></pre>
+            <hr style="border:none;border-top:1px solid var(--dg-line);margin:14px 0;">
             <p class="dg-cardtitle"><i data-lucide="list" aria-hidden="true"></i>Доступные спецификации</p>
             <div class="dg-rowbtn" style="margin-top:0;">
               <select class="dg-input" id="dg-spec-select" style="flex:1;"></select>
