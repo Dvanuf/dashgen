@@ -155,6 +155,33 @@ async function loadSpec(name) {
 
 $('#dg-btn-spec-load').addEventListener('click', () => loadSpec($('#dg-spec-select').value));
 
+// ── проект ИИ: ключ провайдера ──
+async function loadKeyStatus() {
+  try {
+    const st = await api('/api/key-status');
+    $('#dg-key-row').classList.toggle('dg-hidden', st.present);
+    $('#dg-key-badge').classList.toggle('dg-hidden', !st.present);
+  } catch (e) { /* сервер не отвечает — поле остаётся видимым */ }
+}
+
+$('#dg-btn-save-key').addEventListener('click', async () => {
+  const key = $('#dg-key-input').value.trim();
+  if (!key) return;
+  try {
+    await api('/api/set-api-key', { method: 'POST', body: JSON.stringify({ key }), headers: { 'Content-Type': 'application/json' } });
+    $('#dg-key-input').value = '';
+    await loadKeyStatus();
+    const logEl = $('#dg-ai-log');
+    logEl.classList.remove('dg-hidden', 'is-err');
+    logEl.textContent = 'Ключ сохранён в ~/.dashgen/zai_api_key (chmod 600). Можно генерировать.';
+  } catch (e) {
+    const logEl = $('#dg-ai-log');
+    logEl.classList.remove('dg-hidden');
+    logEl.classList.add('is-err');
+    logEl.textContent = 'Ошибка сохранения ключа: ' + e.message;
+  }
+});
+
 // ── проект ИИ: генерация spec ──
 $('#dg-btn-ai-gen').addEventListener('click', async () => {
   const btn = $('#dg-btn-ai-gen'), logEl = $('#dg-ai-log');
@@ -344,6 +371,7 @@ $('#dg-btn-publish').addEventListener('click', async () => {
   await loadSpecList().catch(e => console.warn(e));
   await loadApprovals().catch(e => console.warn(e));
   await loadStreams().catch(e => console.warn(e));
+  await loadKeyStatus().catch(e => console.warn(e));
   // восстановление профиля после перезагрузки страницы: сервер помнит последний
   try {
     const st = await api('/api/state');

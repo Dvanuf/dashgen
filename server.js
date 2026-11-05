@@ -238,6 +238,29 @@ function profileFile(fp, url) {
 // Текущее состояние конвейера для восстановления UI после F5
 api['GET /api/state'] = () => [200, { profile: lastProfile }];
 
+// ── ключ ИИ-провайдера: статус и установка из интерфейса ──
+// Ключ пишется в ~/.dashgen/zai_api_key (chmod 600), в git/логи/ответы не попадает.
+function keyFilePath() {
+  return path.join(require('os').homedir(), '.dashgen', 'zai_api_key');
+}
+
+api['GET /api/key-status'] = () => {
+  if (process.env.ZAI_API_KEY) return [200, { present: true, source: 'env' }];
+  return [200, { present: fs.existsSync(keyFilePath()), source: 'file' }];
+};
+
+api['POST /api/set-api-key'] = async req => {
+  const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+  const key = String(body.key || '').trim();
+  if (!key) return [400, { error: 'Пустой ключ' }];
+  if (key.length < 10) return [400, { error: 'Ключ подозрительно короткий — проверьте, что вставлен целиком' }];
+  const fp = keyFilePath();
+  fs.mkdirSync(path.dirname(fp), { recursive: true });
+  fs.writeFileSync(fp, key + '\n', { mode: 0o600 });
+  fs.chmodSync(fp, 0o600);
+  return [200, { present: true, source: 'file', file: fp }];
+};
+
 // Сборка: {specName} или {spec}
 const apiBuild = {
   'POST /api/build': async req => {
