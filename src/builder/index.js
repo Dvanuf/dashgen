@@ -4,6 +4,31 @@ const { generateScript } = require('../qvs-generator');
 const objects = require('./objects');
 const T = require('./templates');
 
+// Диагноз после неудачного reload: поля, которые нужны мерам/измерениям,
+// против полей, реально появившихся в модели. Текст уходит в ИИ на самоисправление.
+async function diagnoseReloadFailure(app, spec) {
+  const present = new Set();
+  try {
+    const res = await app.getFields();
+    for (const f of (res && res.qFields) || []) present.add(String(f.qName).toLowerCase());
+  } catch (_) { /* модель пуста — не критично для диагноза */ }
+  const needed = new Set();
+  const addFromFormula = text => {
+    const clean = String(text || '').replace(/'[^']*'|"[^"]*"/g, "''");
+    for (const b of clean.match(/\[([^\]]+)\]/g) || []) needed.add(b.slice(1, -1).toLowerCase());
+    for (const id of clean.match(/[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*/g) || []) needed.add(id.toLowerCase());
+  };
+  for (const m of spec.measures || []) addFromFormula(m.formula);
+  for (const d of spec.dimensions || []) if (d.field) needed.add(String(d.field).toLowerCase());
+  const missing = [...needed].filter(f => !present.has(f));
+  if (missing.length) {
+    return `Загрузка не прошла. В модели нет полей: ${missing.join(', ')}. ` +
+      `Полей в модели: ${present.size ? [...present].join(', ') : 'ни одного (таблица не создалась)'}. ` +
+      `Проверьте, что формулы мер и поля измерений используют только колонки из source.fields.`;
+  }
+  return 'Загрузка не прошла без расхождений по полям — вероятно, проблема в типе данных или синтаксисе скрипта.';
+}
+
 // build(spec, cfg, log) → { appId, appName, objects: [{id, type, title}], sheets: n }
 // log — куда пишется журнал сборки (консоль CLI или интерфейс)
 async function build(spec, cfg, log = console.log) {
@@ -17,7 +42,11 @@ async function build(spec, cfg, log = console.log) {
 
     await app.setScript(generateScript(spec));
     if (!(await app.doReload(0, false, false))) {
-      throw new Error('Загрузка данных не прошла — проверьте скрипт и источник');
+      const diagnosis = await diagnoseReloadFailure(app, spec);
+      const err = new Error(diagnosis);
+      err.qlikReloadFailure = true;
+      err.diagnosis = diagnosis;
+      throw err;
     }
     log('Данные загружены');
 

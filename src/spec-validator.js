@@ -17,6 +17,31 @@ function validateSpec(spec) {
       errors.push(where + ' ' + e.message);
     }
   }
+  // Формулы против полей источника (для inline поля известны точно).
+  // Литералы '…'/"…" вырезаем (значения set-анализа не поля), [Поле] считаем полем.
+  const QLIK_WORDS = new Set(['sum', 'count', 'distinct', 'avg', 'min', 'max', 'only', 'if', 'aggr', 'num', 'date', 'month', 'year', 'quarter', 'week', 'day', 'floor', 'ceil', 'round', 'upper', 'lower', 'left', 'right', 'len', 'trim', 'and', 'or', 'not', 'total', 'above', 'stdev', 'frac', 'rank']);
+  const stripLiterals = s => String(s || '').replace(/'[^']*'|"[^"]*"/g, "''");
+  if (spec && typeof spec === 'object' && spec.source && spec.source.type === 'inline') {
+    const fields = new Set((spec.source.fields || []).map(f => String(f).toLowerCase()));
+    const checkFormula = (title, id, formula) => {
+      const clean = stripLiterals(formula);
+      const bracket = new Set((clean.match(/\[([^\]]+)\]/g) || []).map(b => b.slice(1, -1).toLowerCase()));
+      const ids = clean.match(/[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*/g) || [];
+      for (const raw of ids) {
+        const lid = raw.toLowerCase();
+        if (!fields.has(lid) && !bracket.has(lid) && !QLIK_WORDS.has(lid)) {
+          errors.push(`мера «${title}» (${id}): формула «${formula}» использует «${raw}», а такого поля нет в source.fields`);
+        }
+      }
+    };
+    (spec.measures || []).forEach(m => checkFormula(m.title, m.id, m.formula));
+    (spec.dimensions || []).forEach(d => {
+      if (String(d.field).toLowerCase() && !fields.has(String(d.field).toLowerCase())) {
+        errors.push(`измерение «${d.title}» (${d.id}): поле «${d.field}» отсутствует в source.fields`);
+      }
+    });
+  }
+
   // Проверка ссылок: каждый id в объектах должен существовать в measures/dimensions
   if (spec && typeof spec === 'object') {
     const meaIds = new Set((spec.measures || []).map(m => m.id));

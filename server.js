@@ -335,7 +335,35 @@ const apiBuild = {
       printReport(verifyReport, log);
       return [200, { log: logLines, build: buildResult, verify: verifyReport }];
     } catch (e) {
-      logLines.push('ОШИБКА: ' + (e && e.message ? e.message : e));
+      let diagnosis = e && e.qlikReloadFailure ? e.diagnosis : null;
+      logLines.push('СБОЙ СБОРКИ: ' + (e && e.message ? e.message : e));
+      // Этап 7, самоисправление: сбой загрузки уходит модели, она правит spec, пересборка.
+      const aiCfg = CFG.ai;
+      if (diagnosis && aiCfg) {
+        let working = spec;
+        for (let i = 1; i <= 3; i++) {
+          logLines.push('Самоисправление, цикл ' + i + ' из 3: отправляю диагноз в модель…');
+          try {
+            const { fixBuild } = require('./src/ai/fix-build');
+            const fixed = await fixBuild({ spec: working, diagnosis, aiCfg, log });
+            working = fixed.spec;
+            logLines.push('Модель исправила spec за ' + fixed.attempts + ' попыт(и) — пересобираю…');
+            const buildResult = await builder.build(working, CFG, log);
+            const verifyReport = await verify(CFG, buildResult.appId, working, buildResult);
+            printReport(verifyReport, l => logLines.push(String(l)));
+            logLines.push('ИТОГ: сборка после самоисправления прошла успешно');
+            return [200, { log: logLines, build: buildResult, verify: verifyReport, healed: { spec: working, cycles: i } }];
+          } catch (healErr) {
+            if (!healErr || !healErr.qlikReloadFailure) {
+              logLines.push('Самоисправление не удалось: ' + (healErr && healErr.message));
+              break; // ошибка не загрузки (валидация/модель) — дальше цикл бессмыслен без нового диагноза
+            }
+            diagnosis = healErr.diagnosis; // загрузка снова упала — лечим по новому диагнозу
+          }
+        }
+        logLines.push('ИТОГ: самоисправление не сработало за 3 цикла — исправьте spec вручную');
+        return [500, { log: logLines, error: diagnosis, healed: { spec: working } }];
+      }
       return [500, { log: logLines, error: e && e.message ? e.message : String(e) }];
     }
   }

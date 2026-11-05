@@ -362,6 +362,13 @@ $('#dg-btn-build').addEventListener('click', async () => {
     timer.textContent = 'готово за ' + Math.round((Date.now() - t0) / 1000) + ' с';
     $('#dg-build-log').textContent = r.log.join('\n');
     $('#dg-build-log').classList.add('is-ok');
+    if (r.healed && r.healed.spec) {
+      state.spec = r.healed.spec;
+      state.specName = null;
+      state.specChecked = true;
+      $('#dg-spec-view').textContent = JSON.stringify(r.healed.spec, null, 2);
+      $('#dg-build-spec-name').textContent = r.healed.spec.appName + ' (исправлен ИИ, циклов: ' + r.healed.cycles + ')';
+    }
     state.built = true;
     state.published = false;
     renderVerify(r.verify);
