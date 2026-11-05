@@ -42,7 +42,7 @@ async function patchSpec({ spec, instruction, aiCfg, log = () => {} }) {
       log('Попытка ' + attempt + ': патч прошёл схему, ссылки и сетку');
       return { spec: candidate, attempts: attempt };
     }
-    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors[0] + (v.errors.length > 1 ? ' …' : '') + ')');
+    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors.slice(0, 3).join('; ') + (v.errors.length > 3 ? ' …' : '') + ')');
     prompt = [
       'Твой spec.json не прошёл валидацию. Исправь и верни ТОЛЬКО spec.json.',
       'Ошибки валидатора:',

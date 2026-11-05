@@ -6,13 +6,21 @@
 const { chat, extractJson } = require('./provider');
 const { validateSpec } = require('../spec-validator');
 
+// Схема v1 прикладывается к запросу: модель видит точные допустимые поля
+// (лишние свойства в sheets/objects — главная причина бракованных попыток).
+const SCHEMA = require('../../spec/schema.v1.json');
+
 // Системный промпт зависит от режима: синтетика inline или реальный Excel с шары.
 const buildSystem = excelLib => [
   'Ты проектируешь дашборды Qlik Sense. Тебе дают безопасный профиль данных (имена колонок, типы, кардинальность — БЕЗ значений) и описание отчёта.',
-  'Верни ТОЛЬКО spec.json по JSON-схеме Dashgen v1, без пояснений.',
-  'Схема spec v1 (обязательные поля):',
-  '{ "version": 1, "appName": "...", "description": "...",',
-  '  "source": {тип источника}, "measures": [...], "dimensions": [...], "sheets": [...] }',
+  'Верни ТОЛЬКО spec.json по JSON-схеме Dashgen v1 (схема приложена ниже), без пояснений.',
+  'Жёсткие требования к структуре (additionalProperties: false — ЛИШНИЕ ПОЛЯ ЗАПРЕЩЕНЫ):',
+  '- sheets[i]: только title, description, objects. НЕ добавляй kpis, charts, layout и прочее.',
+  '- sheets[i].objects[j]: только type, title, measure, dimension, dimensions, measures, field, col, row, colspan, rowspan.',
+  '- object.type — одно из: kpi, linechart, barchart, table, listbox.',
+  '- Обязательные пары: kpi → measure; linechart/barchart → dimension + measures; table → dimensions + measures; listbox → field.',
+  'Схема v1:',
+  JSON.stringify(SCHEMA, null, 1),
   excelLib
     ? 'Правило источника (РЕАЛЬНЫЙ EXCEL): source строго {"type":"excel","path":"' + excelLib + '","sheet":"<точное имя листа из профиля>"}. НЕ используй inline и синтетику: данные загрузит Qlik из файла. fields не указывай (LOAD * всех колонок).'
     : [
@@ -42,12 +50,16 @@ function buildPrompt(safeProfile, description, excelLib) {
   ].filter(Boolean).join('\n');
 }
 
-// repairPrompt(spec, errors) — запрос исправления
+// repairPrompt(spec, errors) — запрос исправления: со схемой и всеми ошибками
 function repairPrompt(spec, errors) {
   return [
     'Твой spec.json не прошёл валидацию. Исправь и верни ТОЛЬКО исправленный spec.json.',
-    'Ошибки валидатора:',
+    'Важно: лишние поля запрещены схемой (additionalProperties: false).',
+    'Ошибки валидатора (все):',
     ...errors.map(e => '- ' + e),
+    '',
+    'JSON-схема, которой должен соответствовать результат:',
+    JSON.stringify(SCHEMA, null, 1),
     '',
     'Текущий spec.json:',
     JSON.stringify(spec, null, 2)
@@ -74,7 +86,7 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, log = (
       log('Попытка ' + attempt + ': spec прошёл схему v1 и проверку ссылок');
       return { spec, attempts: attempt };
     }
-    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors[0] + (v.errors.length > 1 ? ' …' : '') + ')');
+    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors.slice(0, 3).join('; ') + (v.errors.length > 3 ? ' …' : '') + ')');
     prompt = repairPrompt(spec, v.errors);
   }
   throw new Error('Модель не выдала валидный spec за ' + maxAttempts + ' попытки — правьте spec.json вручную или уточните описание');
