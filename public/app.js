@@ -107,6 +107,9 @@ function refreshGuides() {
   });
 }
 
+// ── обновление интерфейса ──
+$('#dg-btn-ui-reload').addEventListener('click', () => location.reload());
+
 // ── конфиг и подключения ──
 async function loadConfig() {
   try {
