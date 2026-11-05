@@ -104,8 +104,20 @@ function profileFile(fp, url) {
   try {
     const sourceProfile = profileSource(type, fp, { sheet });
     const safeProfile = privacy.makeSafeProfile(sourceProfile, CFG ? CFG.privacy : {});
-    lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString() };
-    return [200, { sourceProfile, safeProfile, file: lastProfile.file, at: lastProfile.at }];
+    // Если файл лежит на смонтированной шаре Qlik — запоминаем lib:// путь:
+    // тогда генерация (любой кнопкой) автоматически идёт в режим реального Excel.
+    const cfgShare = (CFG && CFG.share) || {};
+    const mount = cfgShare.mountRoot || '/Volumes/Users';
+    const userDir = cfgShare.userDir || 'anufriev_d_v';
+    const shareRoot = path.resolve(path.join(mount, userDir));
+    const resolved = path.resolve(fp);
+    let excelLib = null;
+    if (resolved.startsWith(shareRoot + path.sep)) {
+      const rel = path.relative(shareRoot, resolved).split(path.sep).join('/');
+      excelLib = 'lib://' + (cfgShare.connection || 'Рабочие_папки_разработчиков') + '/' + userDir + '/' + rel;
+    }
+    lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString(), excelLib };
+    return [200, { sourceProfile, safeProfile, file: lastProfile.file, at: lastProfile.at, excelLib }];
   } catch (e) {
     return [400, { error: e.message }];
   }
@@ -407,12 +419,15 @@ async function streamGenerate(req, res, url) {
     if (profile.mode !== 'schema') { emit({ type: 'error', message: 'Ожидается профиль режима schema (вывод privacy), а не SourceProfile' }); return res.end(); }
     const aiCfg = (CFG && CFG.ai) || null;
     if (!aiCfg) { emit({ type: 'error', message: 'В config.json нет блока ai (provider/baseUrl/model)' }); return res.end(); }
+    // Профилированный файл на шаре ⇒ excel-режим по умолчанию, даже без явного excelLib
+    const excelLib = body.excelLib ? String(body.excelLib) : (lastProfile && lastProfile.excelLib) || null;
+    if (excelLib) emit({ type: 'log', text: 'Файл на шаре — режим реального Excel: ' + excelLib });
     const { generateSpec } = require('./src/ai/generate-spec');
     const r = await generateSpec({
       safeProfile: profile,
       description: String(body.description),
       aiCfg,
-      excelLib: body.excelLib ? String(body.excelLib) : null,
+      excelLib,
       log: l => emit({ type: 'log', text: String(l) })
     });
     privacy.journal(profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
