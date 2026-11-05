@@ -2,7 +2,7 @@
 // возвращает исправленный spec. Валидатор (включая коллизии сетки) решает,
 // применять патч или вернуть ошибку модели (контур самоисправления, до 3 попыток).
 const { chat, extractJson } = require('./provider');
-const { validateSpec } = require('../spec-validator');
+const { validateSpec, normalizeSpecTypes } = require('../spec-validator');
 
 const SYSTEM = [
   'Ты редактируешь spec.json дашборда Qlik Sense. Тебе дают текущий spec и инструкцию пользователя.',
@@ -11,6 +11,9 @@ const SYSTEM = [
   '- Меняй только то, о чём просит инструкция; остальное сохраняй без изменений.',
   '- Сетка листа 24 колонок × 12 строк, отсчёт с 0. Все объекты должны целиком помещаться: col+colspan ≤ 24, row+rowspan ≤ 12.',
   '- Объекты не должны перекрываться по площади.',
+  '- Типы объектов: barchart, linechart, piechart (доли ≤6), scatterplot (пузырьковая: dimension + 2 меры X/Y + 3-я = размер, не более 3), combochart (две шкалы), treemap (иерархия долей), gauge (одна мера, без dimension), table, kpi, listbox.',
+  '- Просьба «пузырьковая/бабл» = scatterplot. Меняй типы осмысленно, но не добавляй типы вне этого списка.',
+  '- Точный пример scatterplot (НИКАКИХ других полей в объекте): {"type":"scatterplot","title":"Связь показателей","dimension":"<id измерения>","measures":["<id мерыX>","<id мерыY>","<id мерыРазмер>"],"col":14,"row":3,"colspan":10,"rowspan":5} — если размер не нужен, мер ровно 2.',
   '- Не выдумывай мер, измерений и полей: каждый объект ссылается только на существующие id.',
   '- Сохрани все типы объектов (kpi, linechart, barchart, table, listbox) осмысленно: kpi — компактные сверху, графики в середине, таблицы снизу, фильтры listbox — слева.'
 ].join('\n');
@@ -31,7 +34,7 @@ async function patchSpec({ spec, instruction, aiCfg, log = () => {} }) {
     const text = await chat(aiCfg, SYSTEM, prompt);
     let candidate;
     try {
-      candidate = extractJson(text);
+      candidate = normalizeSpecTypes(extractJson(text));
     } catch (e) {
       log('Попытка ' + attempt + ': ответ не JSON — ' + e.message);
       prompt = 'Предыдущий ответ не был JSON. Верни ТОЛЬКО исправленный spec.json.\n\n' + prompt;
@@ -42,7 +45,8 @@ async function patchSpec({ spec, instruction, aiCfg, log = () => {} }) {
       log('Попытка ' + attempt + ': патч прошёл схему, ссылки и сетку');
       return { spec: candidate, attempts: attempt };
     }
-    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors.slice(0, 3).join('; ') + (v.errors.length > 3 ? ' …' : '') + ')');
+    const typesSeen = (candidate.sheets || []).map(s2 => (s2.objects || []).map(o => o.type).join(',')).join(' | ');
+    log('Попытка ' + attempt + ': ошибок валидации — ' + v.errors.length + ' (' + v.errors.slice(0, 3).join('; ') + (v.errors.length > 3 ? ' …' : '') + '); типы: [' + typesSeen + ']');
     prompt = [
       'Твой spec.json не прошёл валидацию. Исправь и верни ТОЛЬКО spec.json.',
       'Ошибки валидатора:',

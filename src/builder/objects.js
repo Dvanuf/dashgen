@@ -1,6 +1,54 @@
 // Создание объектов Qlik по элементам spec: мастер-элементы и визуализации.
-// Свойства отображения берутся из шаблонов (templates.js), данные — из spec.
+// Свойства отображения берутся из шаблонов: базовые 5 типов — из templates.js (проверены),
+// новые типы (piechart, scatterplot, treemap…) — из снятых слепков клиента templates/*.json.
+const fs = require('fs');
+const path = require('path');
 const T = require('./templates');
+
+const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates');
+
+// Шаблон клиента для типа: templates/<тип>.json (снят extract-templates.js) или null
+function loadTemplate(type) {
+  const fp = path.join(TEMPLATE_DIR, type + '.json');
+  if (!fs.existsSync(fp)) return null;
+  try {
+    const t = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    delete t.qInfo; // id и тип задаёт сборщик
+    return t;
+  } catch (_) { return null; }
+}
+
+// HyperCube из spec для шаблонных типов (dims/меры — library-ссылки)
+function buildHypercube(ospec, dimMap, meaMap) {
+  const dims = (ospec.dimensions || (ospec.dimension ? [ospec.dimension] : []))
+    .map(did => ({ qLibraryId: dimMap[did], qDef: {} }));
+  const meas = (ospec.measures || []).map(mid => meaMap[mid])
+    .filter(Boolean).map(id => ({ qLibraryId: id, qDef: {} }));
+  const total = dims.length + meas.length;
+  return {
+    qDimensions: dims,
+    qMeasures: meas,
+    qInterColumnSortOrder: Array.from({ length: total }, (_, i) => i),
+    qInitialDataFetch: [{ qTop: 0, qLeft: 0, qWidth: Math.max(total, 1), qHeight: ospec.type === 'scatterplot' ? 3333 : 100 }]
+  };
+}
+
+// Создание по снятому шаблону: свойства клиента (цвета, оси, легенда) — из слепка,
+// данные и заголовок — из spec. Если шаблона нет — ошибка с подсказкой.
+async function createFromTemplate(app, ospec, dimMap, meaMap) {
+  const template = loadTemplate(ospec.type);
+  if (!template) {
+    throw new Error(`для типа «${ospec.type}» нет снятого шаблона templates/${ospec.type}.json — прогоните scripts/extract-templates.js`);
+  }
+  return app.createObject({
+    ...template,
+    qInfo: { qType: ospec.type },
+    visualization: ospec.type,
+    showTitles: true,
+    title: ospec.title || '',
+    qHyperCubeDef: buildHypercube(ospec, dimMap, meaMap)
+  });
+}
 
 function ref(map, id, kind) {
   if (!map[id]) throw new Error('spec ссылается на несуществующий ' + kind + ': ' + id);
@@ -108,7 +156,15 @@ async function createObjectBySpec(app, ospec, dimMap, meaMap) {
     case 'barchart': obj = await createBar(app, ospec, dimMap, meaMap); break;
     case 'table': obj = await createTable(app, ospec, dimMap, meaMap); break;
     case 'listbox': obj = await createListbox(app, ospec); break;
-    default: throw new Error('Неизвестный тип объекта: ' + ospec.type);
+    // Типы из снятых шаблонов клиента (templates/<тип>.json):
+    case 'piechart':
+    case 'scatterplot':
+    case 'combochart':
+    case 'treemap':
+    case 'gauge':
+    case 'pivot-table':
+      obj = await createFromTemplate(app, ospec, dimMap, meaMap); break;
+    default: throw new Error('Неизвестный тип объекта: ' + ospec.type + ' (в spec v1 разрешены: kpi, linechart, barchart, table, listbox, piechart, scatterplot, combochart, treemap, gauge, pivot-table)');
   }
   return { id: obj.id };
 }

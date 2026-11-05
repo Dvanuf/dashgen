@@ -1,0 +1,14 @@
+{
+ "qInfo": {
+  "qType": "filterpane"
+ },
+ "qMetaDef": {},
+ "visualization": "filterpane",
+ "showTitles": true,
+ "title": "Harvest filterpane",
+ "qChildListDef": {
+  "qData": {
+   "info": "/qListObjectDef"
+  }
+ }
+}

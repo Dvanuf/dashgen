@@ -1,0 +1,186 @@
+{
+ "qInfo": {
+  "qType": "waterfallchart"
+ },
+ "qMetaDef": {},
+ "visualization": "waterfallchart",
+ "showTitles": true,
+ "title": "Harvest waterfallchart",
+ "qHyperCubeDef": {
+  "qDimensions": [
+   {
+    "qLibraryId": "643a36a6-879d-456c-94a3-10026de74808",
+    "qDef": {
+     "qGrouping": "N",
+     "qFieldDefs": [],
+     "qFieldLabels": [],
+     "qSortCriterias": [],
+     "qNumberPresentations": [],
+     "qActiveField": 0
+    },
+    "qOtherTotalSpec": {
+     "qOtherMode": "OTHER_OFF",
+     "qOtherCounted": {},
+     "qOtherLimit": {},
+     "qOtherLimitMode": "OTHER_GT_LIMIT",
+     "qForceBadValueKeeping": true,
+     "qApplyEvenWhenPossiblyWrongResult": true,
+     "qOtherSortMode": "OTHER_SORT_DESCENDING",
+     "qTotalMode": "TOTAL_OFF",
+     "qReferencedExpression": {}
+    },
+    "qOtherLabel": {},
+    "qTotalLabel": {},
+    "qCalcCond": {},
+    "qAttributeExpressions": [],
+    "qAttributeDimensions": [],
+    "qCalcCondition": {
+     "qCond": {},
+     "qMsg": {}
+    }
+   }
+  ],
+  "qMeasures": [
+   {
+    "qLibraryId": "8d58a715-1ad8-420e-89e3-0cf3590cd926",
+    "qDef": {
+     "qTags": [],
+     "qGrouping": "N",
+     "qAccumulate": 0,
+     "qActiveExpression": 0,
+     "qExpressions": []
+    },
+    "qSortBy": {
+     "qExpression": {}
+    },
+    "qAttributeExpressions": [],
+    "qAttributeDimensions": [],
+    "qCalcCond": {},
+    "qCalcCondition": {
+     "qCond": {},
+     "qMsg": {}
+    },
+    "qTrendLines": [],
+    "qMiniChartDef": {
+     "qSortBy": {
+      "qExpression": {}
+     },
+     "qOtherTotalSpec": {
+      "qOtherMode": "OTHER_OFF",
+      "qOtherCounted": {},
+      "qOtherLimit": {},
+      "qOtherLimitMode": "OTHER_GT_LIMIT",
+      "qForceBadValueKeeping": true,
+      "qApplyEvenWhenPossiblyWrongResult": true,
+      "qOtherSortMode": "OTHER_SORT_DESCENDING",
+      "qTotalMode": "TOTAL_OFF",
+      "qReferencedExpression": {}
+     },
+     "qMaxNumberPoints": -1,
+     "qAttributeExpressions": []
+    }
+   },
+   {
+    "qLibraryId": "60486e02-77f2-49c1-930d-0b28c6146a08",
+    "qDef": {
+     "qTags": [],
+     "qGrouping": "N",
+     "qAccumulate": 0,
+     "qActiveExpression": 0,
+     "qExpressions": []
+    },
+    "qSortBy": {
+     "qExpression": {}
+    },
+    "qAttributeExpressions": [],
+    "qAttributeDimensions": [],
+    "qCalcCond": {},
+    "qCalcCondition": {
+     "qCond": {},
+     "qMsg": {}
+    },
+    "qTrendLines": [],
+    "qMiniChartDef": {
+     "qSortBy": {
+      "qExpression": {}
+     },
+     "qOtherTotalSpec": {
+      "qOtherMode": "OTHER_OFF",
+      "qOtherCounted": {},
+      "qOtherLimit": {},
+      "qOtherLimitMode": "OTHER_GT_LIMIT",
+      "qForceBadValueKeeping": true,
+      "qApplyEvenWhenPossiblyWrongResult": true,
+      "qOtherSortMode": "OTHER_SORT_DESCENDING",
+      "qTotalMode": "TOTAL_OFF",
+      "qReferencedExpression": {}
+     },
+     "qMaxNumberPoints": -1,
+     "qAttributeExpressions": []
+    }
+   },
+   {
+    "qLibraryId": "5a4dd88f-d312-447b-8c64-f8f83b50bee7",
+    "qDef": {
+     "qTags": [],
+     "qGrouping": "N",
+     "qAccumulate": 0,
+     "qActiveExpression": 0,
+     "qExpressions": []
+    },
+    "qSortBy": {
+     "qExpression": {}
+    },
+    "qAttributeExpressions": [],
+    "qAttributeDimensions": [],
+    "qCalcCond": {},
+    "qCalcCondition": {
+     "qCond": {},
+     "qMsg": {}
+    },
+    "qTrendLines": [],
+    "qMiniChartDef": {
+     "qSortBy": {
+      "qExpression": {}
+     },
+     "qOtherTotalSpec": {
+      "qOtherMode": "OTHER_OFF",
+      "qOtherCounted": {},
+      "qOtherLimit": {},
+      "qOtherLimitMode": "OTHER_GT_LIMIT",
+      "qForceBadValueKeeping": true,
+      "qApplyEvenWhenPossiblyWrongResult": true,
+      "qOtherSortMode": "OTHER_SORT_DESCENDING",
+      "qTotalMode": "TOTAL_OFF",
+      "qReferencedExpression": {}
+     },
+     "qMaxNumberPoints": -1,
+     "qAttributeExpressions": []
+    }
+   }
+  ],
+  "qInterColumnSortOrder": [],
+  "qInitialDataFetch": [
+   {
+    "qLeft": 0,
+    "qTop": 0,
+    "qWidth": 4,
+    "qHeight": 50
+   }
+  ],
+  "qReductionMode": "N",
+  "qMode": "S",
+  "qPseudoDimPos": -1,
+  "qNoOfLeftDims": -1,
+  "qMaxStackedCells": 5000,
+  "qCalcCond": {},
+  "qTitle": {},
+  "qCalcCondition": {
+   "qCond": {},
+   "qMsg": {}
+  },
+  "qColumnOrder": [],
+  "qExpansionState": [],
+  "qDynamicScript": []
+ }
+}

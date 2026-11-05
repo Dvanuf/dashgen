@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "appName": "Сводный отчёт по показателям",
+  "description": "Сводный отчёт по показателям: KPI (число показателей, число ответственных, число периодов), график значений по периодам, пузырьковая диаграмма по показателям, таблица детализации показателей",
+  "source": {
+    "type": "excel",
+    "path": "lib://Рабочие_папки_разработчиков/anufriev_d_v/БД_демо.xlsx",
+    "sheet": "Сводно UPD"
+  },
+  "measures": [
+    {
+      "id": "cntIndicators",
+      "title": "Число показателей",
+      "formula": "Count(DISTINCT [Показатель])"
+    },
+    {
+      "id": "cntOwners",
+      "title": "Число ответственных",
+      "formula": "Count(DISTINCT [Отв])"
+    },
+    {
+      "id": "cntPeriods",
+      "title": "Число периодов",
+      "formula": "Count(DISTINCT [Период])"
+    },
+    {
+      "id": "sumValue",
+      "title": "Сумма значений",
+      "formula": "Sum([Значение])"
+    },
+    {
+      "id": "avgValue",
+      "title": "Среднее значение",
+      "formula": "Avg([Значение])"
+    },
+    {
+      "id": "cntRecords",
+      "title": "Число записей",
+      "formula": "Count([Значение])"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "dimPeriod",
+      "title": "Период",
+      "field": "Период"
+    },
+    {
+      "id": "dimIndicator",
+      "title": "Показатель",
+      "field": "Показатель"
+    },
+    {
+      "id": "dimOwner",
+      "title": "Ответственный",
+      "field": "Отв"
+    },
+    {
+      "id": "dimUnit",
+      "title": "Ед. измерения",
+      "field": "Ед. измерения"
+    },
+    {
+      "id": "dimIndicatorType",
+      "title": "Тип показетеля",
+      "field": "Тип показетеля"
+    },
+    {
+      "id": "dimSheetName",
+      "title": "Наименование листа",
+      "field": "Наименование листа"
+    }
+  ],
+  "sheets": [
+    {
+      "title": "Обзор",
+      "objects": [
+        {
+          "type": "kpi",
+          "title": "Число показателей",
+          "measure": "cntIndicators",
+          "col": 4,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "kpi",
+          "title": "Число ответственных",
+          "measure": "cntOwners",
+          "col": 9,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "kpi",
+          "title": "Число периодов",
+          "measure": "cntPeriods",
+          "col": 14,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "listbox",
+          "title": "Показатель",
+          "field": "Показатель",
+          "col": 0,
+          "row": 0,
+          "colspan": 3,
+          "rowspan": 7
+        },
+        {
+          "type": "listbox",
+          "title": "Ответственный",
+          "field": "Отв",
+          "col": 0,
+          "row": 7,
+          "colspan": 3,
+          "rowspan": 5
+        },
+        {
+          "type": "linechart",
+          "title": "Значения по периодам",
+          "dimension": "dimPeriod",
+          "measures": [
+            "sumValue"
+          ],
+          "col": 4,
+          "row": 3,
+          "colspan": 20,
+          "rowspan": 4
+        },
+        {
+          "type": "table",
+          "title": "Детализация показателей",
+          "dimensions": [
+            "dimIndicator",
+            "dimOwner",
+            "dimUnit",
+            "dimIndicatorType",
+            "dimSheetName",
+            "dimPeriod"
+          ],
+          "measures": [
+            "sumValue"
+          ],
+          "col": 4,
+          "row": 7,
+          "colspan": 10,
+          "rowspan": 5
+        },
+        {
+          "type": "scatterplot",
+          "title": "Среднее значение по показателям",
+          "dimension": "dimIndicator",
+          "measures": [
+            "avgValue",
+            "sumValue",
+            "cntRecords"
+          ],
+          "col": 14,
+          "row": 7,
+          "colspan": 10,
+          "rowspan": 5
+        }
+      ]
+    }
+  ]
+}

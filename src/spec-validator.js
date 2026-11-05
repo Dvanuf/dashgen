@@ -5,6 +5,35 @@ const Ajv = require('ajv');
 
 const schemaPath = path.join(__dirname, '..', 'spec', 'schema.v1.json');
 
+// Синонимы типов от модели («scatter», «bubble», «столбчатая»…) → канонические имена.
+// ИИ выбирает смысл — код чинит имя (принцип «ИИ решает, код исполняет»).
+const TYPE_ALIASES = {
+  'scatter': 'scatterplot', 'bubble': 'scatterplot', 'bubblechart': 'scatterplot', 'scatter-chart': 'scatterplot',
+  'пузырьковая': 'scatterplot', 'пузырьковаядиаграмма': 'scatterplot',
+  'pie': 'piechart', 'круговая': 'piechart', 'donut': 'piechart', 'донат': 'piechart',
+  'bar': 'barchart', 'столбчатая': 'barchart', 'гистограмма': 'barchart', 'barchart-vertical': 'barchart',
+  'line': 'linechart', 'линейный': 'linechart', 'линия': 'linechart',
+  'combo': 'combochart', 'комбинированный': 'combochart',
+  'tree': 'treemap', 'картадерева': 'treemap',
+  'gaugechart': 'gauge', 'спидометр': 'gauge',
+  'pivot': 'pivot-table', 'своднаятаблица': 'pivot-table'
+};
+
+// Нормализация типов объектов в spec: модель иногда называет типы по-своему
+function normalizeSpecTypes(spec) {
+  if (!spec || !Array.isArray(spec.sheets)) return spec;
+  for (const sheet of spec.sheets) {
+    if (!Array.isArray(sheet.objects)) continue;
+    for (const o of sheet.objects) {
+      if (o && typeof o.type === 'string') {
+        const key = o.type.toLowerCase().replace(/[\s\-_]/g, '');
+        if (TYPE_ALIASES[key]) o.type = TYPE_ALIASES[key];
+      }
+    }
+  }
+  return spec;
+}
+
 // validateSpec(spec) → { ok: true } | { ok: false, errors: [строки] }
 function validateSpec(spec) {
   const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
@@ -53,8 +82,14 @@ function validateSpec(spec) {
     (spec.sheets || []).forEach(sheet => (sheet.objects || []).forEach((o, i) => {
       const at = `sheet «${sheet.title}» объект #${i}`;
       if (o.type === 'kpi' && o.measure && !meaIds.has(o.measure)) errors.push(at + ': неизвестная мера «' + o.measure + '»');
-      if (['linechart', 'barchart'].includes(o.type) && o.dimension && !dimIds.has(o.dimension)) {
+      if (['linechart', 'barchart', 'piechart', 'scatterplot', 'combochart', 'treemap'].includes(o.type) && o.dimension && !dimIds.has(o.dimension)) {
         errors.push(at + ': неизвестное измерение «' + o.dimension + '»');
+      }
+      if (o.type === 'scatterplot') {
+        const n = (o.measures || []).length;
+        if (n < 2 || n > 3) {
+          errors.push(at + ': пузырьковой (scatterplot) нужно 2 меры (X и Y) или 3 (X, Y, размер пузырька), сейчас — ' + n + '. Пример: {"type":"scatterplot","dimension":"<id>","measures":["<мераX>","<мераY>","<мераРазмер>"],"col":14,"row":3,"colspan":10,"rowspan":5}');
+        }
       }
       if (['linechart', 'barchart', 'table'].includes(o.type)) {
         for (const mid of o.measures || []) if (!meaIds.has(mid)) errors.push(at + ': неизвестная мера «' + mid + '»');
@@ -101,4 +136,4 @@ function loadSpec(specPath) {
   return spec;
 }
 
-module.exports = { validateSpec, loadSpec };
+module.exports = { validateSpec, loadSpec, normalizeSpecTypes };

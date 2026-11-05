@@ -4,7 +4,7 @@
 // Контур самоисправления (раздел 9 документации): ошибки валидации возвращаются
 // модели на исправление; лимит 3 попытки, затем отчёт человеку.
 const { chat, extractJson } = require('./provider');
-const { validateSpec } = require('../spec-validator');
+const { validateSpec, normalizeSpecTypes } = require('../spec-validator');
 
 // Схема v1 прикладывается к запросу: модель видит точные допустимые поля
 // (лишние свойства в sheets/objects — главная причина бракованных попыток).
@@ -30,7 +30,9 @@ const buildSystem = excelLib => [
       ],
   '- measures: id латиницей, title по-русски, formula — выражение Qlik (Sum(...), Count(DISTINCT ...), деление для средних). Учитывай типы колонок из профиля: меры — по числовым, измерения — по текстовым и датам.',
   '- dimensions: id латиницей, title по-русски, field — точное имя колонки из профиля.',
-  '- sheets: 1 лист «Обзор»; objects: 3-4 kpi сверху (col 4..19, row 0, rowspan 3), linechart/barchart (row 3), table (row 7, rowspan 5); listbox слева (col 0). Сетка 24×12: col 0-23, row 0-11. У каждого объекта должны быть col и row.',
+  '- sheets: 1 лист «Обзор»; objects: 3-4 kpi сверху (col 4..19, row 0, rowspan 3), графики (row 3), table (row 7, rowspan 5); listbox слева (col 0). Сетка 24×12: col 0-23, row 0-11. У каждого объекта должны быть col и row.',
+  '- Типы объектов и когда применять: barchart — сравнение категорий; linechart — динамика во времени; piechart — доли (≤6 категорий); scatterplot — пузырьковая: связь двух показателей, 3-я мера = размер пузырька; combochart — две шкалы (сумма+штуки); treemap — иерархия долей; gauge — показатель против цели (без dimension); table — детализация; kpi — ключевой показатель; listbox — фильтр.',
+  '- Выбирай типы осмысленно под данные профиля: даты → linechart/combochart, категории → barchart/piechart/treemap, две числовые связи → scatterplot. Если пользователь просит «пузырьковую» — это scatterplot.',
   '- Каждый объект ссылается ТОЛЬКО на существующие id мер/измерений.',
   '- Не выдумывай поля, которых нет в профиле. Формулы используй только по существующим колонкам.'
 ].filter(Boolean).join('\n');
@@ -75,7 +77,7 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, log = (
     log('Попытка ' + attempt + ' из ' + maxAttempts + ': запрос к модели…');
     const text = await chat(aiCfg, buildSystem(excelLib), prompt);
     try {
-      spec = extractJson(text);
+      spec = normalizeSpecTypes(extractJson(text));
     } catch (e) {
       log('Попытка ' + attempt + ': не удалось извлечь JSON — ' + e.message);
       prompt = repairPrompt({}, ['Ответ не является валидным JSON: ' + e.message]);

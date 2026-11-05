@@ -1,0 +1,36 @@
+{
+ "qInfo": {
+  "qType": "listbox"
+ },
+ "qMetaDef": {},
+ "visualization": "listbox",
+ "showTitles": true,
+ "title": "Harvest listbox",
+ "qListObjectDef": {
+  "qDef": {
+   "qGrouping": "N",
+   "qFieldDefs": [
+    "Region"
+   ],
+   "qFieldLabels": [],
+   "qSortCriterias": [
+    {
+     "qSortByAscii": 1,
+     "qExpression": {}
+    }
+   ],
+   "qNumberPresentations": [],
+   "qActiveField": 0
+  },
+  "qFrequencyMode": "N",
+  "qInitialDataFetch": [
+   {
+    "qLeft": 0,
+    "qTop": 0,
+    "qWidth": 1,
+    "qHeight": 100
+   }
+  ],
+  "qExpressions": []
+ }
+}

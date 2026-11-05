@@ -118,7 +118,7 @@ function profileFile(fp, url) {
       const rel = path.relative(shareRoot, resolved).split(path.sep).join('/');
       excelLib = 'lib://' + (cfgShare.connection || 'Рабочие_папки_разработчиков') + '/' + userDir + '/' + rel;
     }
-    lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString(), excelLib };
+    lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString(), excelLib, localPath: resolved };
     return [200, { sourceProfile, safeProfile, file: lastProfile.file, at: lastProfile.at, excelLib }];
   } catch (e) {
     return [400, { error: e.message }];
@@ -279,6 +279,49 @@ const api = {
   },
 
   'GET /api/state': () => [200, { profile: lastProfile }],
+
+  // Агрегаты для цветного макета: {groups, sheet, source?} → данные по полям
+  'POST /api/preview-data': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    let fp = body.localPath || (lastProfile && lastProfile.localPath) || null;
+    if (!fp && body.source && body.source.path && String(body.source.path).startsWith('lib://')) {
+      // lib://Соединение/путь → смонтированная шара (только для папки разработчика)
+      const cfgShare = (CFG && CFG.share) || {};
+      const mount = cfgShare.mountRoot || '/Volumes/Users';
+      const userDir = cfgShare.userDir || 'anufriev_d_v';
+      const rest = String(body.source.path).slice('lib://'.length).split('/').slice(1).join('/'); // отрезаем имя соединения, остаётся userDir/файл
+      const candidate = path.resolve(mount, rest);
+      if (fs.existsSync(candidate)) fp = candidate;
+    }
+    if (!fp || !fs.existsSync(fp)) return [404, { error: 'Локальный файл профиля недоступен' }];
+    const XLSX = require('xlsx');
+    const wb = XLSX.readFile(fp, { cellDates: true });
+    const sheetName = body.sheet && wb.SheetNames.includes(body.sheet) ? body.sheet : wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null });
+    if (!rows.length) return [200, { sheet: sheetName, rowCount: 0, groups: {} }];
+    const cols = Object.keys(rows[0]);
+    const isNum = v => typeof v === 'number' && Number.isFinite(v);
+    // группы: {dimField + '|' + measureField: top-10 {label, value}}
+    const groups = {};
+    for (const g of body.groups || []) {
+      const { dim, measure, agg } = g;
+      if (!cols.includes(dim)) continue;
+      const acc = {};
+      for (const r of rows) {
+        const dv = r[dim];
+        const label = dv instanceof Date ? dv.toISOString().slice(0, 7) : String(dv ?? '—'); // даты → ГГГГ-ММ
+        if (agg === 'count') { acc[label] = (acc[label] || 0) + 1; continue; }
+        if (!cols.includes(measure) || !isNum(r[measure])) continue;
+        acc[label] = (acc[label] || 0) + r[measure];
+      }
+      const top = Object.entries(acc)
+        .sort((a, b) => b[1] - a[1]).slice(0, 10)
+        .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
+      groups[dim + '|' + measure + '|' + (agg || 'sum')] = { labels: top.map(t => t.label), values: top.map(t => t.value) };
+    }
+    // сэмпл строк для таблиц и значений KPI
+    return [200, { sheet: sheetName, rowCount: rows.length, columns: cols, groups, sample: rows.slice(0, 8) }];
+  },
 
   // ── ключ ИИ-провайдера: статус и установка из интерфейса ──
   // Ключ пишется в ~/.dashgen/zai_api_key (chmod 600), в git/логи/ответы не попадает.

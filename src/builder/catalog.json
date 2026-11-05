@@ -1,0 +1,20 @@
+{
+  "piechart": { "title": "Круговая (pie)", "when": "доли целого, не более 5-6 категорий", "requires": { "dimension": 1, "measures": "1" } },
+  "scatterplot": { "title": "Пузырьковая (scatter)", "when": "связь двух показателей и размер третьего; точки = значения измерения", "requires": { "dimension": 1, "measures": "2: X и Y; 3-я мера = размер пузырька (опционально)" } },
+  "combochart": { "title": "Комбинированный (bar+line)", "when": "два показателя разных шкал по одной оси категорий (например, суммы и штуки)", "requires": { "dimension": 1, "measures": "2+" } },
+  "treemap": { "title": "Treemap", "when": "иерархия долей, много категорий, сравнение части к целому", "requires": { "dimension": 1, "measures": "1" } },
+  "gauge": { "title": "Спидометр (gauge)", "when": "один показатель против диапазона/цели", "requires": { "measures": "1, без измерения" } },
+  "pivot-table": { "title": "Сводная таблица (pivot)", "when": "кросс-таблица: измерения в строках и столбцах", "requires": { "dimension": "1+", "measures": "1+" } },
+  "boxplot": { "title": "Ящик с усами", "when": "распределение показателя по группам (медиана, квартили)", "requires": { "dimension": 1, "measures": "1" }, "advanced": true },
+  "distributionplot": { "title": "Распределение", "when": "разброс значений по группам", "requires": { "dimension": 1, "measures": "1" }, "advanced": true },
+  "waterfallchart": { "title": "Водопад", "when": "разложение отклонения на составляющие (2-3 меры)", "requires": { "dimension": 1, "measures": "2-3" }, "advanced": true },
+  "mekko-chart": { "title": "Мекко", "when": "доли в двух измерениях сразу (ширина × высота)", "requires": { "dimension": 2, "measures": 1 }, "advanced": true },
+  "funnel-chart": { "title": "Воронка", "when": "этапы процесса с убыванием", "requires": { "dimension": 1, "measures": 1 }, "advanced": true },
+  "filterpane": { "title": "Панель фильтров", "requires": {}, "advanced": true, "note": "создаётся с дочерними listbox, в spec v1 не используется" },
+  "textimage": { "title": "Текст", "requires": {}, "note": "в spec v1 не используется" },
+  "kpi": { "title": "KPI", "when": "один ключевой показатель", "requires": { "measures": 1 } },
+  "linechart": { "title": "Линейный", "when": "динамика во времени", "requires": { "dimension": 1, "measures": "1+" } },
+  "barchart": { "title": "Столбчатая", "when": "сравнение категорий", "requires": { "dimension": 1, "measures": "1+" } },
+  "table": { "title": "Таблица", "when": "детализация", "requires": { "dimension": "1+", "measures": "1+" } },
+  "listbox": { "title": "Фильтр (listbox)", "when": "выбор значений поля", "requires": { "field": "имя колонки" } }
+}

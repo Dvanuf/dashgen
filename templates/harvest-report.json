@@ -1,0 +1,23 @@
+{
+  "ok": [
+    "barchart",
+    "linechart",
+    "piechart",
+    "scatterplot",
+    "combochart",
+    "table",
+    "pivot-table",
+    "treemap",
+    "gauge",
+    "kpi",
+    "listbox",
+    "filterpane",
+    "textimage",
+    "boxplot",
+    "distributionplot",
+    "waterfallchart",
+    "mekko-chart",
+    "funnel-chart"
+  ],
+  "fail": []
+}
