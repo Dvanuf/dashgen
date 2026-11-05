@@ -117,19 +117,21 @@ const api = {
   },
 
   // Генерация spec ИИ-моделью: {profile (safeProfile!), description}
-  // Граница: принимается только безопасный профиль из UI, без значений.
+  // Граница: принимается только безопасный профиль; если не передан —
+  // используется последний профилированный на сервере (тоже safeProfile).
   'POST /api/generate-spec': async req => {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-    if (!body.profile || !body.profile.tables) return [400, { error: 'Нужен безопасный профиль (сначала профилируйте источник)' }];
+    const profile = (body.profile && body.profile.tables) ? body.profile : (lastProfile && lastProfile.safeProfile);
+    if (!profile) return [400, { error: 'Нужен безопасный профиль (сначала профилируйте источник)' }];
     if (!body.description || !String(body.description).trim()) return [400, { error: 'Опишите отчёт словами — что показывать' }];
-    if (body.profile.mode !== 'schema') return [400, { error: 'Ожидается профиль режима schema (вывод privacy), а не SourceProfile' }];
+    if (profile.mode !== 'schema') return [400, { error: 'Ожидается профиль режима schema (вывод privacy), а не SourceProfile' }];
     const aiCfg = (CFG && CFG.ai) || null;
     if (!aiCfg) return [500, { error: 'В config.json нет блока ai (provider/baseUrl/model)' }];
     const logLines = [];
     const { generateSpec } = require('./src/ai/generate-spec');
     try {
-      const r = await generateSpec({ safeProfile: body.profile, description: String(body.description), aiCfg, log: l => logLines.push(l) });
-      privacy.journal(body.profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
+      const r = await generateSpec({ safeProfile: profile, description: String(body.description), aiCfg, log: l => logLines.push(l) });
+      privacy.journal(profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
       logLines.push('Отправка профиля записана в журнал (logs/privacy-send.jsonl)');
       return [200, { spec: r.spec, attempts: r.attempts, log: logLines }];
     } catch (e) {
@@ -217,17 +219,24 @@ const api = {
   }
 };
 
+// Последний профилированный источник: переживает перезагрузку страницы (F5)
+let lastProfile = null;
+
 function profileFile(fp, url) {
   const type = fp.toLowerCase().endsWith('.qvd') ? 'qvd' : 'excel';
   const sheet = url.searchParams.get('sheet') || undefined;
   try {
     const sourceProfile = profileSource(type, fp, { sheet });
     const safeProfile = privacy.makeSafeProfile(sourceProfile, CFG ? CFG.privacy : {});
-    return [200, { sourceProfile, safeProfile }];
+    lastProfile = { sourceProfile, safeProfile, file: path.basename(fp), at: new Date().toISOString() };
+    return [200, { sourceProfile, safeProfile, file: lastProfile.file, at: lastProfile.at }];
   } catch (e) {
     return [400, { error: e.message }];
   }
 }
+
+// Текущее состояние конвейера для восстановления UI после F5
+api['GET /api/state'] = () => [200, { profile: lastProfile }];
 
 // Сборка: {specName} или {spec}
 const apiBuild = {

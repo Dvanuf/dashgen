@@ -73,6 +73,8 @@ document.querySelectorAll('.dg-chip[data-src]').forEach(chip => chip.addEventLis
 }));
 
 function renderProfile(data) {
+  state.sourceProfile = data.sourceProfile;
+  state.safeProfile = data.safeProfile;
   const sp = data.sourceProfile;
   const banned = new Set((data.safeProfile.excludedColumns || []).map(x => x.table + '::' + x.column));
   let html = '';
@@ -342,5 +344,17 @@ $('#dg-btn-publish').addEventListener('click', async () => {
   await loadSpecList().catch(e => console.warn(e));
   await loadApprovals().catch(e => console.warn(e));
   await loadStreams().catch(e => console.warn(e));
+  // восстановление профиля после перезагрузки страницы: сервер помнит последний
+  try {
+    const st = await api('/api/state');
+    if (st.profile && st.profile.safeProfile) {
+      renderProfile(st.profile);
+      const note = document.createElement('div');
+      note.className = 'dg-note';
+      note.style.marginTop = '6px';
+      note.textContent = 'Восстановлен последний профиль: ' + st.profile.file + ' (от ' + (st.profile.at || '').slice(0, 16).replace('T', ' ') + ')';
+      $('#dg-profile-out').appendChild(note);
+    }
+  } catch (e) { console.warn(e); }
   icons();
 })();
