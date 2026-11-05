@@ -11,6 +11,8 @@ const state = {
   approvals: [], streams: [], specChecked: false, built: false, published: false, verifyOk: false
 };
 
+const share = { rel: '', selected: null, status: null };
+
 async function api(path, options) {
   const res = await fetch(path, options);
   const data = await res.json().catch(() => ({}));
@@ -106,6 +108,9 @@ function refreshGuides() {
     [...el.children].forEach((li, i) => li.classList.toggle('is-done', !!flags[i]));
   });
 }
+
+// ── обновление интерфейса ──
+$('#dg-btn-ui-reload').addEventListener('click', () => location.reload());
 
 // ── конфиг и подключения ──
 async function loadConfig() {
@@ -948,7 +953,6 @@ $('#dg-btn-publish').addEventListener('click', async () => {
 });
 
 // ── браузер сетевой папки Qlik ──
-const share = { rel: '', selected: null, status: null };
 
 async function shareLoad() {
   const st = await api('/api/share-status');
