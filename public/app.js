@@ -584,6 +584,15 @@ $('#dg-btn-share-mount').addEventListener('click', async () => {
   await shareLoad();
 });
 
+$('#dg-btn-share-refresh').addEventListener('click', () => shareList(share.rel));
+
+// список шары обновляется при каждом открытии вкладки «Источник»
+navBtns.forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.step === 'source' && share.status && share.status.mounted) {
+    shareList(share.rel).catch(() => {});
+  }
+}));
+
 async function shareList(sub) {
   const r = await api('/api/share-files?sub=' + encodeURIComponent(sub));
   share.rel = r.sub || '';
@@ -600,6 +609,15 @@ async function shareList(sub) {
 
   const list = $('#dg-share-list');
   let html = '';
+  if ((r.strays || []).length && !r.sub) {
+    html += '<p class="dg-note" style="padding:4px 8px 0;">Найдено в корне шары (мимо вашей папки):</p>';
+    for (const f of r.strays) {
+      html += '<div class="dg-share-item" style="cursor:default;"><i data-lucide="move-down" aria-hidden="true"></i>' + esc(f.name) +
+        '<span class="meta">' + Math.round(f.size / 1024) + ' КБ</span>' +
+        '<button class="dg-btn" type="button" data-adopt="' + esc(f.name) + '" style="flex:none;">→ в мою папку</button></div>';
+    }
+    html += '<hr style="border:none;border-top:1px solid var(--dg-line);margin:4px 8px;">';
+  }
   if (r.sub) html += '<button class="dg-share-item" type="button" data-up="1"><i data-lucide="arrow-left" aria-hidden="true"></i>… назад</button>';
   for (const f of r.folders || []) {
     html += '<button class="dg-share-item" type="button" data-folder="' + esc(f) + '"><i data-lucide="folder" aria-hidden="true"></i>' + esc(f) + '</button>';
@@ -623,6 +641,13 @@ async function shareList(sub) {
     list.querySelectorAll('.dg-share-item').forEach(x => x.classList.remove('is-on'));
     b.classList.add('is-on');
     selectShareFile(b.dataset.file);
+  }));
+  list.querySelectorAll('[data-adopt]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'переношу…';
+    try {
+      await api('/api/share-adopt', { method: 'POST', body: JSON.stringify({ name: b.dataset.adopt }), headers: { 'Content-Type': 'application/json' } });
+      await shareList(share.rel);
+    } catch (e) { b.disabled = false; b.textContent = 'ошибка: ' + e.message; }
   }));
 }
 

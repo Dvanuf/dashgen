@@ -220,7 +220,34 @@ const api = {
     files.sort((a, b) => b.mtime - a.mtime);
     folders.sort((a, b) => a.localeCompare(b, 'ru'));
     const rel = path.relative(root, target).split(path.sep).filter(Boolean).join('/');
-    return [200, { mounted: true, sub: rel, folders, files }];
+    // Файлы, брошенные в корень шары (мимо личной папки) — предложим перенести
+    const strays = [];
+    if (!rel) {
+      try {
+        for (const name of fs.readdirSync(mount)) {
+          if (!/\.(xlsx|xlsm|csv)$/i.test(name) || name.startsWith('~$') || name.startsWith('.')) continue;
+          const st = fs.statSync(path.join(mount, name));
+          strays.push({ name, size: st.size, mtime: st.mtimeMs });
+        }
+      } catch (_) {}
+    }
+    return [200, { mounted: true, sub: rel, folders, files, strays }];
+  },
+
+  // Перенести файл из корня шары в личную папку разработчика
+  'POST /api/share-adopt': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const cfgShare = (CFG && CFG.share) || {};
+    const mount = cfgShare.mountRoot || '/Volumes/Users';
+    const userDir = cfgShare.userDir || 'anufriev_d_v';
+    const root = path.resolve(path.join(mount, userDir));
+    if (!fs.existsSync(root)) return [404, { error: 'Личная папка на шаре не найдена' }];
+    const name = safeName(body.name);
+    if (!/\.(xlsx|xlsm|csv)$/i.test(name)) return [400, { error: 'Только .xlsx/.xlsm/.csv' }];
+    const src = path.join(mount, name);
+    if (!fs.existsSync(src)) return [404, { error: 'Файла нет в корне шары' }];
+    fs.copyFileSync(src, path.join(root, name));
+    return [200, { adopted: name }];
   },
 
   // Локальный путь выбранного файла на смонтированной шаре (для профилирования)
