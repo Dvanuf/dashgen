@@ -551,29 +551,148 @@ $('#dg-btn-publish').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
-// ── реальный Excel с шары Qlik ──
-$('#dg-btn-gen-excel').addEventListener('click', async () => {
-  const btn = $('#dg-btn-gen-excel'), logEl = $('#dg-ai-log');
-  const file = $('#dg-excel-file').value.trim();
-  const sheet = $('#dg-excel-sheet').value.trim();
-  if (!file) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Укажите имя файла на шаре.'; return; }
-  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте источник (лучше тот же файл).'; return; }
-  // переходим на «Спецификацию», где видно лог и результат
+// ── браузер сетевой папки Qlik ──
+const share = { rel: '', selected: null, status: null };
+
+async function shareLoad() {
+  const st = await api('/api/share-status');
+  share.status = st;
+  const badge = $('#dg-share-status');
+  if (st.mounted && st.exists) {
+    badge.textContent = 'шара подключена';
+    badge.className = 'dg-badge dg-badge--ok';
+    $('#dg-btn-share-mount').classList.add('dg-hidden');
+    await shareList('');
+  } else if (st.mounted && !st.exists) {
+    badge.textContent = 'папка ' + st.userDir + ' на шаре не найдена';
+    badge.className = 'dg-badge dg-badge--warn';
+    $('#dg-share-list').innerHTML = '<p class="dg-note">Создайте папку <span class="dg-mono">' + esc(st.userDir) + '</span> на шаре или проверьте имя.</p>';
+  } else {
+    badge.textContent = 'шара не подключена';
+    badge.className = 'dg-badge dg-badge--warn';
+    $('#dg-btn-share-mount').classList.remove('dg-hidden');
+    $('#dg-share-list').innerHTML = '<p class="dg-note">Подключите шару — Finder запросит доменные креды.</p>';
+  }
+}
+
+$('#dg-btn-share-mount').addEventListener('click', async () => {
+  const badge = $('#dg-share-status');
+  badge.textContent = 'подключаю…';
+  try { await api('/api/share-mount', { method: 'POST' }); }
+  catch (e) { badge.textContent = 'ошибка подключения'; return; }
+  await shareLoad();
+});
+
+async function shareList(sub) {
+  const r = await api('/api/share-files?sub=' + encodeURIComponent(sub));
+  share.rel = r.sub || '';
+  share.selected = null;
+  $('#dg-share-actions').style.display = 'none';
+  $('#dg-share-selected').textContent = 'Выберите файл кликом — путь lib:// построится сам, inline не будет.';
+  const crumbs = [[r.sub ? 'корень' : '', '']];
+  const parts = (r.sub || '').split('/').filter(Boolean);
+  let acc = '';
+  parts.forEach(p => { acc += (acc ? '/' : '') + p; crumbs.push([p, acc]); });
+  $('#dg-share-crumbs').innerHTML = crumbs.map((c, i) =>
+    (i ? ' / ' : '') + '<a data-sub="' + esc(c[1]) + '">' + esc(c[0] || 'корень') + '</a>').join('');
+  $('#dg-share-crumbs').querySelectorAll('a').forEach(a => a.addEventListener('click', () => shareList(a.dataset.sub)));
+
+  const list = $('#dg-share-list');
+  let html = '';
+  if (r.sub) html += '<button class="dg-share-item" type="button" data-up="1"><i data-lucide="arrow-left" aria-hidden="true"></i>… назад</button>';
+  for (const f of r.folders || []) {
+    html += '<button class="dg-share-item" type="button" data-folder="' + esc(f) + '"><i data-lucide="folder" aria-hidden="true"></i>' + esc(f) + '</button>';
+  }
+  for (const f of r.files || []) {
+    html += '<button class="dg-share-item" type="button" data-file="' + esc(f.name) + '"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>' + esc(f.name) +
+      '<span class="meta">' + Math.round(f.size / 1024) + ' КБ · ' + new Date(f.mtime).toLocaleDateString('ru') + '</span></button>';
+  }
+  if (!r.folders?.length && !r.files?.length) html += '<p class="dg-note" style="padding:8px;">Папка пуста — скопируйте сюда .xlsx через Finder.</p>';
+  list.innerHTML = '<div class="dg-share-list">' + html + '</div>';
+  icons();
+
+  list.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
+    const parts = (share.rel || '').split('/').filter(Boolean); parts.pop();
+    shareList(parts.join('/'));
+  }));
+  list.querySelectorAll('[data-folder]').forEach(b => b.addEventListener('click', () => {
+    shareList((share.rel ? share.rel + '/' : '') + b.dataset.folder);
+  }));
+  list.querySelectorAll('[data-file]').forEach(b => b.addEventListener('click', () => {
+    list.querySelectorAll('.dg-share-item').forEach(x => x.classList.remove('is-on'));
+    b.classList.add('is-on');
+    selectShareFile(b.dataset.file);
+  }));
+}
+
+async function selectShareFile(name) {
+  share.selected = name;
+  const rel = (share.rel ? share.rel + '/' : '') + name;
+  const localPath = (share.status ? share.status.root : '/Volumes/Users/anufriev_d_v') + '/' + rel;
+  $('#dg-share-actions').style.display = 'flex';
+  $('#dg-share-selected').innerHTML = 'Выбран: <b>' + esc(name) + '</b> → <span class="dg-mono">lib://Рабочие_папки_разработчиков/anufriev_d_v/' + esc(rel) + '</span>';
+  shareHistoryAdd(name, rel);
+  $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Профилирую выбранный файл…</div>';
+  try {
+    const data = await api('/api/profile-path', { method: 'POST', body: JSON.stringify({ path: localPath }), headers: { 'Content-Type': 'application/json' } });
+    renderProfile(data);
+  } catch (e) {
+    $('#dg-profile-out').innerHTML = '<div class="dg-card dg-note">Ошибка: ' + esc(e.message) + '</div>';
+  }
+}
+
+// история выбранных файлов (вариант 3): localStorage
+function shareHistoryAdd(name, rel) {
+  try {
+    const h = JSON.parse(localStorage.getItem('dg_share_history') || '[]').filter(x => x.rel !== rel);
+    h.unshift({ name, rel, at: Date.now() });
+    localStorage.setItem('dg_share_history', JSON.stringify(h.slice(0, 5)));
+  } catch (_) {}
+  shareHistoryRender();
+}
+
+function shareHistoryRender() {
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem('dg_share_history') || '[]'); } catch (_) {}
+  const sel = $('#dg-share-history');
+  if (!h.length) { sel.classList.add('dg-hidden'); return; }
+  sel.classList.remove('dg-hidden');
+  sel.innerHTML = '<option value="">Недавние…</option>' + h.map(x => '<option value="' + esc(x.rel) + '">' + esc(x.name) + '</option>').join('');
+  sel.onchange = async () => {
+    if (!sel.value) return;
+    const parts = sel.value.split('/'); parts.pop();
+    await shareList(parts.join('/'));
+    const item = $('#dg-share-list [data-file="' + CSS.escape(parts.length ? '' : '') + '"]') || null;
+    // выбор файла из истории: открываем папку и выбираем по имени
+    const name = h.find(x => x.rel === sel.value).name;
+    const btn = [...document.querySelectorAll('#dg-share-list [data-file]')].find(b => b.dataset.file === name);
+    if (btn) btn.click();
+  };
+}
+
+$('#dg-btn-profile-share').addEventListener('click', () => {
+  if (!share.selected) return;
+  // повторное профилирование (например, файл обновился на шаре)
+  selectShareFile(share.selected);
+});
+
+$('#dg-btn-gen-share').addEventListener('click', async () => {
+  const btn = $('#dg-btn-gen-share'), logEl = $('#dg-ai-log');
+  if (!share.selected) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Выберите файл в списке выше.'; return; }
+  if (!state.safeProfile) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала профилируйте выбранный файл.'; return; }
+  const rel = (share.rel ? share.rel + '/' : '') + share.selected;
+  const excelLib = 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + rel;
   navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === 'spec'));
   document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-spec'; });
   btn.disabled = true;
-  // поле принимает и имя файла, и полный путь lib:// — не задваиваем префикс
-  const excelLib = file.startsWith('lib://')
-    ? file
-    : 'lib://Рабочие_папки_разработчиков/anufriev_d_v/' + file;
-  progressStart(logEl, 'Отправляю профиль модели (режим реального Excel: ' + excelLib + ')…');
+  progressStart(logEl, 'Генерирую spec с excel-источником: ' + excelLib);
   try {
     const r = await apiStream('/api/generate-spec', {
       profile: state.safeProfile,
       description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
       excelLib
     }, text => {
-      progressPhase('Модель формирует spec с excel-источником…');
+      progressPhase('Модель формирует spec (реальные данные)…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;
     });
     progressStop(true);
@@ -585,14 +704,14 @@ $('#dg-btn-gen-excel').addEventListener('click', async () => {
     state.published = false;
     $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
     $('#dg-top-spec').textContent = r.spec.appName;
-    $('#dg-build-spec-name').textContent = r.spec.appName + ' (excel: ' + file + ')';
+    $('#dg-build-spec-name').textContent = r.spec.appName + ' (excel: ' + share.selected + ')';
     setStatus('dg-st-spec', '✓');
     renderLayout(r.spec);
   } catch (e) {
     progressStop(false);
     logEl.classList.add('is-err');
     logEl.textContent += '\nОШИБКА: ' + e.message;
-  } finally { btn.disabled = false; refreshGuides(); icons(); }
+  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
 // ── старт ──
@@ -603,6 +722,7 @@ $('#dg-btn-gen-excel').addEventListener('click', async () => {
   await loadStreams().catch(e => console.warn(e));
   await loadKeyStatus().catch(e => console.warn(e));
   await loadAiPresets().catch(e => console.warn(e));
+  await shareLoad().catch(e => console.warn(e));
   try {
     const st = await api('/api/state');
     if (st.profile && st.profile.safeProfile) {

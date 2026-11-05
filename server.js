@@ -165,6 +165,77 @@ const api = {
     return profileFile(body.path, new URL('http://x/?' + (body.sheet ? 'sheet=' + encodeURIComponent(body.sheet) : '')));
   },
 
+  // ── сетевая папка Qlik (браузер файлов шары) ──
+  // Шара монтируется в /Volumes/Users (smb://onyx-qlick.onyx.local/Users);
+  // работаем только внутри личной папки разработчика — наружу не выходим.
+
+  'GET /api/share-status': () => {
+    const cfgShare = (CFG && CFG.share) || {};
+    const mount = cfgShare.mountRoot || '/Volumes/Users';
+    const userDir = cfgShare.userDir || 'anufriev_d_v';
+    const root = path.join(mount, userDir);
+    return [200, {
+      mounted: fs.existsSync(mount),
+      mount, userDir,
+      root,
+      connection: cfgShare.connection || 'Рабочие_папки_разработчиков',
+      exists: fs.existsSync(root)
+    }];
+  },
+
+  'POST /api/share-mount': async () => {
+    const { execFile } = require('child_process');
+    const cfgShare = (CFG && CFG.share) || {};
+    const host = cfgShare.smbHost || 'onyx-qlick.onyx.local';
+    const share = cfgShare.smbShare || 'Users';
+    try {
+      await new Promise((resolve, reject) => {
+        execFile('osascript', ['-e', `mount volume "smb://${host}/${share}"`], { timeout: 30000 }, err => err ? reject(err) : resolve());
+      });
+    } catch (e) {
+      return [500, { error: 'Не удалось смонтировать шару (проверьте доступ и креды в Finder): ' + e.message.slice(0, 200) }];
+    }
+    return [200, { mounted: fs.existsSync(cfgShare.mountRoot || '/Volumes/Users') }];
+  },
+
+  'GET /api/share-files': (req, res, url) => {
+    const cfgShare = (CFG && CFG.share) || {};
+    const mount = cfgShare.mountRoot || '/Volumes/Users';
+    const userDir = cfgShare.userDir || 'anufriev_d_v';
+    const root = path.resolve(path.join(mount, userDir));
+    if (!fs.existsSync(mount)) return [200, { mounted: false, folders: [], files: [] }];
+    if (!fs.existsSync(root)) return [200, { mounted: true, folders: [], files: [], error: 'Папка ' + userDir + ' на шаре не найдена' }];
+    const sub = url.searchParams.get('sub') || '';
+    const target = path.resolve(root, '.' + path.sep + sub);
+    if (!target.startsWith(root)) return [400, { error: 'Недопустимый путь' }];
+    if (!fs.existsSync(target)) return [404, { error: 'Папка не найдена на шаре' }];
+    const folders = [], files = [];
+    for (const name of fs.readdirSync(target)) {
+      if (name.startsWith('~$') || name.startsWith('.')) continue;
+      const fp = path.join(target, name);
+      let st; try { st = fs.statSync(fp); } catch (_) { continue; }
+      if (st.isDirectory()) folders.push(name);
+      else if (/\.(xlsx|xlsm|csv)$/i.test(name)) files.push({ name, size: st.size, mtime: st.mtimeMs });
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    folders.sort((a, b) => a.localeCompare(b, 'ru'));
+    const rel = path.relative(root, target).split(path.sep).filter(Boolean).join('/');
+    return [200, { mounted: true, sub: rel, folders, files }];
+  },
+
+  // Локальный путь выбранного файла на смонтированной шаре (для профилирования)
+  'GET /api/share-file-path': (req, res, url) => {
+    const cfgShare = (CFG && CFG.share) || {};
+    const mount = cfgShare.mountRoot || '/Volumes/Users';
+    const userDir = cfgShare.userDir || 'anufriev_d_v';
+    const root = path.resolve(path.join(mount, userDir));
+    const rel = url.searchParams.get('rel') || '';
+    const target = path.resolve(root, '.' + path.sep + rel);
+    if (!target.startsWith(root)) return [400, { error: 'Недопустимый путь' }];
+    if (!fs.existsSync(target)) return [404, { error: 'Файл не найден на шаре' }];
+    return [200, { localPath: target, rel, excelLib: 'lib://' + (cfgShare.connection || 'Рабочие_папки_разработчиков') + '/' + userDir + '/' + rel }];
+  },
+
   'GET /api/state': () => [200, { profile: lastProfile }],
 
   // ── ключ ИИ-провайдера: статус и установка из интерфейса ──

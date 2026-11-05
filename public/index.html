@@ -70,16 +70,20 @@
         </div>
         <div id="dg-profile-out"></div>
         <div class="dg-card">
-          <p class="dg-cardtitle"><i data-lucide="hard-drive" aria-hidden="true"></i>Реальные данные: файл на шаре Qlik <span class="dg-note" style="margin-left:auto;font-weight:400;">connection «Рабочие_папки_разработчиков» → \\onyx-qlick\Users\</span></p>
+          <p class="dg-cardtitle"><i data-lucide="hard-drive" aria-hidden="true"></i>Файл на шаре Qlik <span class="dg-note" style="margin-left:auto;font-weight:400;" id="dg-share-note">\\onyx-qlick\Users\anufriev_d_v</span></p>
           <div class="dg-rowbtn" style="margin-top:0;">
-            <input class="dg-input" id="dg-excel-file" type="text" placeholder="БД_демо.xlsx — имя на шаре или полный путь lib://…" style="flex:2;">
-            <input class="dg-input" id="dg-excel-sheet" type="text" placeholder="Лист (например Сводно UPD)" style="flex:1;">
+            <span class="dg-badge dg-badge--warn" id="dg-share-status">проверяю шару…</span>
+            <button class="dg-btn dg-hidden" id="dg-btn-share-mount" type="button"><i data-lucide="plug" aria-hidden="true"></i>Подключить шару</button>
+            <select class="dg-input dg-hidden" id="dg-share-history" style="flex:none;width:auto;"></select>
           </div>
-          <div class="dg-rowbtn">
-            <button class="dg-btn dg-btn--p" id="dg-btn-gen-excel" type="button"><i data-lucide="database" aria-hidden="true"></i>Сгенерировать spec из Excel (реальные данные)</button>
-            <span class="dg-note">Файл должен лежать в вашей папке на шаре; скрипт загрузки возьмёт lib:// вместо inline</span>
+          <div class="dg-crumbs" id="dg-share-crumbs"></div>
+          <div id="dg-share-list"><p class="dg-note">…</p></div>
+          <div class="dg-rowbtn" id="dg-share-actions" style="display:none;">
+            <input class="dg-input" id="dg-excel-sheet" type="text" placeholder="Лист (например Сводно UPD)" style="flex:none;width:200px;">
+            <button class="dg-btn" id="dg-btn-profile-share" type="button"><i data-lucide="table" aria-hidden="true"></i>Профилировать</button>
+            <button class="dg-btn dg-btn--p" id="dg-btn-gen-share" type="button"><i data-lucide="database" aria-hidden="true"></i>Сгенерировать spec из Excel</button>
           </div>
-          <p class="dg-note" style="margin:8px 0 0;">Скопировать файл: Finder → <span class="dg-mono">smb://onyx-qlick.onyx.local/Users/anufriev_d_v/</span> (шара уже смонтирована в /Volumes/Users)</p>
+          <p class="dg-note" id="dg-share-selected" style="margin:8px 0 0;">Выберите файл кликом — путь lib:// построится сам, inline не будет.</p>
         </div>
       </section>
 
