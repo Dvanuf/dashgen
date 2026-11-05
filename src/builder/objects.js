@@ -29,7 +29,10 @@ function buildHypercube(ospec, dimMap, meaMap) {
     qDimensions: dims,
     qMeasures: meas,
     qInterColumnSortOrder: Array.from({ length: total }, (_, i) => i),
-    qInitialDataFetch: [{ qTop: 0, qLeft: 0, qWidth: Math.max(total, 1), qHeight: ospec.type === 'scatterplot' ? 3333 : 100 }]
+    qInitialDataFetch: [{ qTop: 0, qLeft: 0, qWidth: Math.max(total, 1), qHeight: ospec.type === 'scatterplot' ? 3333 : 100 }],
+    // Клиент Sense добавляет dataHandling при создании через UI; без него объекты
+    // могут выглядеть «незавершёнными» в новых версиях клиента.
+    dataHandling: { suppressMissing: true, suppressZero: false }
   };
 }
 
