@@ -9,7 +9,9 @@ const DEFAULTS = {
   baseUrl: 'https://api.z.ai/api/paas/v4',
   model: 'glm-4.6',
   temperature: 0,
-  timeoutMs: 120000
+  timeoutMs: 240000,
+  // генерация JSON не требует «размышлений»: отключаем thinking glm-4.6 (иначе запрос идёт минуты)
+  thinking: { type: 'disabled' }
 };
 
 function readApiKey() {
@@ -32,6 +34,7 @@ async function chat(aiCfg, system, prompt) {
     body: JSON.stringify({
       model: cfg.model,
       temperature: cfg.temperature,
+      thinking: cfg.thinking,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: prompt }

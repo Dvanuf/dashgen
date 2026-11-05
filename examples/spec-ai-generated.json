@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "appName": "Отчёт по командам и сотрудникам",
+  "description": "Дашборд: KPI по сотрудникам и командам, распределение сотрудников по командам, детализация команда-сотрудник. Синтетические данные (источник excel, lib:// не настроен).",
+  "source": {
+    "type": "inline",
+    "table": "Sheet1",
+    "fields": [
+      "Команда",
+      "Сотрудник",
+      "employeeID",
+      "employee_GUID"
+    ],
+    "rows": [
+      [
+        "Продажи",
+        "Иванов И.",
+        "E001",
+        "g-001"
+      ],
+      [
+        "Продажи",
+        "Петров П.",
+        "E002",
+        "g-002"
+      ],
+      [
+        "Продажи",
+        "Сидорова А.",
+        "E003",
+        "g-003"
+      ],
+      [
+        "Маркетинг",
+        "Кузнецов Д.",
+        "E004",
+        "g-004"
+      ],
+      [
+        "Маркетинг",
+        "Смирнова О.",
+        "E005",
+        "g-005"
+      ],
+      [
+        "Разработка",
+        "Волков С.",
+        "E006",
+        "g-006"
+      ],
+      [
+        "Разработка",
+        "Фёдорова М.",
+        "E007",
+        "g-007"
+      ],
+      [
+        "Разработка",
+        "Громов Н.",
+        "E008",
+        "g-008"
+      ],
+      [
+        "Разработка",
+        "Лебедева Е.",
+        "E009",
+        "g-009"
+      ],
+      [
+        "Поддержка",
+        "Козлов В.",
+        "E010",
+        "g-010"
+      ],
+      [
+        "Поддержка",
+        "Новикова Т.",
+        "E011",
+        "g-011"
+      ],
+      [
+        "HR",
+        "Морозов А.",
+        "E012",
+        "g-012"
+      ],
+      [
+        "HR",
+        "Зайцева И.",
+        "E013",
+        "g-013"
+      ],
+      [
+        "Финансы",
+        "Павлов Р.",
+        "E014",
+        "g-014"
+      ]
+    ]
+  },
+  "measures": [
+    {
+      "id": "totalEmployees",
+      "title": "Всего сотрудников",
+      "formula": "Count(DISTINCT [Сотрудник])"
+    },
+    {
+      "id": "totalTeams",
+      "title": "Всего команд",
+      "formula": "Count(DISTINCT [Команда])"
+    },
+    {
+      "id": "avgTeamSize",
+      "title": "Средний размер команды",
+      "formula": "Count(DISTINCT [Сотрудник]) / Count(DISTINCT [Команда])"
+    },
+    {
+      "id": "employeesWithoutTeam",
+      "title": "Сотрудники без команды",
+      "formula": "Count(DISTINCT {<[Команда]={'null'}>} [Сотрудник])"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "dimTeam",
+      "title": "Команда",
+      "field": "Команда"
+    },
+    {
+      "id": "dimEmployee",
+      "title": "Сотрудник",
+      "field": "Сотрудник"
+    },
+    {
+      "id": "dimEmployeeID",
+      "title": "ID сотрудника",
+      "field": "employeeID"
+    }
+  ],
+  "sheets": [
+    {
+      "title": "Обзор",
+      "objects": [
+        {
+          "type": "kpi",
+          "title": "Всего сотрудников",
+          "measure": "totalEmployees",
+          "col": 4,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "kpi",
+          "title": "Всего команд",
+          "measure": "totalTeams",
+          "col": 8,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "kpi",
+          "title": "Средний размер команды",
+          "measure": "avgTeamSize",
+          "col": 12,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "kpi",
+          "title": "Сотрудники без команды",
+          "measure": "employeesWithoutTeam",
+          "col": 16,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 3
+        },
+        {
+          "type": "listbox",
+          "title": "Команда",
+          "field": "Команда",
+          "col": 0,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 12
+        },
+        {
+          "type": "barchart",
+          "title": "Сотрудники по командам",
+          "dimension": "dimTeam",
+          "measures": [
+            "totalEmployees"
+          ],
+          "col": 4,
+          "row": 3,
+          "colspan": 16,
+          "rowspan": 4
+        },
+        {
+          "type": "table",
+          "title": "Детализация команда-сотрудник",
+          "dimensions": [
+            "dimTeam",
+            "dimEmployee",
+            "dimEmployeeID"
+          ],
+          "measures": [
+            "totalEmployees"
+          ],
+          "col": 4,
+          "row": 7,
+          "colspan": 19,
+          "rowspan": 5
+        }
+      ]
+    }
+  ]
+}
