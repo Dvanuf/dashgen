@@ -46,30 +46,17 @@
       <section class="dg-panel" id="dg-p-source">
         <h2 class="dg-h">Источник данных</h2>
         <ol class="dg-guide" id="dg-guide-source">
-          <li>Выберите файл: <b>путь на этом Mac</b> или загрузка из браузера</li>
-          <li>Нажмите <b>«Профилировать»</b> — обязательное действие этого этапа</li>
+          <li>Выберите файл <b>кликом из списка шары</b> (или путь на этом Mac) — профиль построится сам</li>
+          <li>Для реальных данных — <b>«Сгенерировать spec из Excel»</b>; для пробы — просто идите дальше</li>
           <li>Дальше: шаг «Приватность» (он проходится автоматически)</li>
         </ol>
         <p class="dg-sub">Адаптеры: Excel и QVD. Профиль строится локально, значения не покидают эту машину.</p>
         <div class="dg-chips" style="margin-bottom:14px;">
-          <button class="dg-chip is-on" data-src="path" type="button"><i data-lucide="folder-open" aria-hidden="true"></i>Путь на этом Mac</button>
+          <button class="dg-chip is-on" data-src="share" type="button"><i data-lucide="hard-drive" aria-hidden="true"></i>Папка на шаре Qlik</button>
+          <button class="dg-chip" data-src="path" type="button"><i data-lucide="folder-open" aria-hidden="true"></i>Путь на этом Mac</button>
           <button class="dg-chip" data-src="upload" type="button"><i data-lucide="upload" aria-hidden="true"></i>Загрузить файл</button>
         </div>
-        <div class="dg-card" id="dg-src-path">
-          <p class="dg-cardtitle"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>Файл .xlsx или .qvd</p>
-          <div class="dg-rowbtn" style="margin-top:2px;">
-            <input class="dg-input" id="dg-src-path-in" type="text" placeholder="/Users/…/orders.xlsx" style="flex:2;">
-            <input class="dg-input" id="dg-src-sheet-in" type="text" placeholder="Лист (необязательно)" style="flex:1;">
-            <button class="dg-btn dg-btn--p" id="dg-btn-profile-path" type="button"><i data-lucide="table" aria-hidden="true"></i>Профилировать</button>
-          </div>
-        </div>
-        <div class="dg-card dg-hidden" id="dg-src-upload">
-          <p class="dg-cardtitle"><i data-lucide="upload" aria-hidden="true"></i>Файл с этого компьютера</p>
-          <input id="dg-src-file" type="file" accept=".xlsx,.qvd">
-          <div class="dg-rowbtn"><button class="dg-btn dg-btn--p" id="dg-btn-profile-upload" type="button"><i data-lucide="table" aria-hidden="true"></i>Загрузить и профилировать</button></div>
-        </div>
-        <div id="dg-profile-out"></div>
-        <div class="dg-card">
+        <div class="dg-card" id="dg-src-share">
           <p class="dg-cardtitle"><i data-lucide="hard-drive" aria-hidden="true"></i>Файл на шаре Qlik <span class="dg-note" style="margin-left:auto;font-weight:400;" id="dg-share-note">\\onyx-qlick\Users\anufriev_d_v</span></p>
           <div class="dg-rowbtn" style="margin-top:0;">
             <span class="dg-badge dg-badge--warn" id="dg-share-status">проверяю шару…</span>
@@ -85,6 +72,21 @@
           </div>
           <p class="dg-note" id="dg-share-selected" style="margin:8px 0 0;">Выберите файл кликом — путь lib:// построится сам, inline не будет.</p>
         </div>
+        <div class="dg-card dg-hidden" id="dg-src-path">
+          <p class="dg-cardtitle"><i data-lucide="file-spreadsheet" aria-hidden="true"></i>Файл .xlsx или .qvd</p>
+          <div class="dg-rowbtn" style="margin-top:2px;">
+            <input class="dg-input" id="dg-src-path-in" type="text" placeholder="/Users/…/orders.xlsx" style="flex:2;">
+            <input class="dg-input" id="dg-src-sheet-in" type="text" placeholder="Лист (необязательно)" style="flex:1;">
+            <button class="dg-btn dg-btn--p" id="dg-btn-profile-path" type="button"><i data-lucide="table" aria-hidden="true"></i>Профилировать</button>
+          </div>
+        </div>
+        <div class="dg-card dg-hidden" id="dg-src-upload">
+          <p class="dg-cardtitle"><i data-lucide="upload" aria-hidden="true"></i>Файл с этого компьютера</p>
+          <input id="dg-src-file" type="file" accept=".xlsx,.qvd">
+          <div class="dg-rowbtn"><button class="dg-btn dg-btn--p" id="dg-btn-profile-upload" type="button"><i data-lucide="table" aria-hidden="true"></i>Загрузить и профилировать</button></div>
+        </div>
+        <div id="dg-profile-out"></div>
+        
       </section>
 
       <!-- Приватность -->

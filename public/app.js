@@ -144,6 +144,7 @@ $('#dg-btn-test-conn').addEventListener('click', async () => {
 // ── источник ──
 document.querySelectorAll('.dg-chip[data-src]').forEach(chip => chip.addEventListener('click', () => {
   document.querySelectorAll('.dg-chip[data-src]').forEach(c => c.classList.toggle('is-on', c === chip));
+  $('#dg-src-share').classList.toggle('dg-hidden', chip.dataset.src !== 'share');
   $('#dg-src-path').classList.toggle('dg-hidden', chip.dataset.src !== 'path');
   $('#dg-src-upload').classList.toggle('dg-hidden', chip.dataset.src !== 'upload');
 }));
