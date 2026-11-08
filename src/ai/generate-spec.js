@@ -11,7 +11,7 @@ const { validateSpec, normalizeSpecTypes } = require('../spec-validator');
 const SCHEMA = require('../../spec/schema.v1.json');
 
 // Системный промпт зависит от режима: синтетика inline или реальный Excel с шары.
-const buildSystem = excelLib => [
+const buildSystem = (excelLib, isMulti) => [
   'Ты проектируешь дашборды Qlik Sense. Тебе дают безопасный профиль данных (имена колонок, типы, кардинальность — БЕЗ значений) и описание отчёта.',
   'Верни ТОЛЬКО spec.json по JSON-схеме Dashgen v1 (схема приложена ниже), без пояснений.',
   'Жёсткие требования к структуре (additionalProperties: false — ЛИШНИЕ ПОЛЯ ЗАПРЕЩЕНЫ):',
@@ -21,7 +21,9 @@ const buildSystem = excelLib => [
   '- Обязательные пары: kpi → measure; linechart/barchart → dimension + measures; table → dimensions + measures; listbox → field.',
   'Схема v1:',
   JSON.stringify(SCHEMA, null, 1),
-  excelLib
+  isMulti
+    ? 'Правило источника (МУЛЬТИ): "sources" массив (каждый: id/type/path/sheet, не-главным задай prefix). Одиночный source и inline ЗАПРЕЩЕНЫ. Связи — "joins" с how:"rename".'
+    : excelLib
     ? 'Правило источника (РЕАЛЬНЫЙ EXCEL): source строго {"type":"excel","path":"' + excelLib + '","sheet":"<точное имя листа из профиля>"}. НЕ используй inline и синтетику: данные загрузит Qlik из файла. fields не указывай (LOAD * всех колонок).'
     : [
         'Правила источника (СИНТЕТИЧЕСКИЙ РЕЖИМ, lib:// недоступен):',
@@ -41,17 +43,34 @@ const buildSystem = excelLib => [
 
 const SYSTEM = buildSystem(null); // режим по умолчанию (синтетика)
 
-// buildPrompt(safeProfile, description, excelLib) — пользовательский запрос.
+// buildPrompt(safeProfile, description, excelLib, multi) — пользовательский запрос.
 // excelLib — путь lib:// к реальному файлу на шаре: тогда источник excel, не inline.
-function buildPrompt(safeProfile, description, excelLib) {
-  return [
+// multi — несколько источников: [{id, excelLib, safeProfile, main}]
+function buildPrompt(safeProfile, description, excelLib, multi) {
+  const base = [
     'Описание отчёта от пользователя:',
     description,
-    '',
-    'Безопасный профиль данных (значений нет):',
-    JSON.stringify(safeProfile, null, 2),
-    excelLib ? '\nРежим данных: РЕАЛЬНЫЙ EXCEL на шаре Qlik. source обязателен вида: {"type":"excel","path":"' + excelLib + '","sheet":"<имя листа профиля>"} — НЕ inline, синтетику не придумывай.' : ''
-  ].filter(Boolean).join('\n');
+    ''
+  ];
+  if (multi && multi.length) {
+    multi.forEach((m, i) => {
+      base.push('=== Источник ' + (i + 1) + (m.main ? ' (ГЛАВНЫЙ: KPI и основная динамика — из него)' : '') + ' id: "' + m.id + '" ===');
+      base.push(JSON.stringify(m.safeProfile, null, 1));
+      base.push('Путь: ' + m.excelLib);
+      base.push('');
+    });
+    base.push('РЕЖИМ: НЕСКОЛЬКО РЕАЛЬНЫХ EXCEL-ИСТОЧНИКОВ. Правила:');
+    base.push('- Верни "sources": массив, каждый элемент: {"id":"<как выше>","type":"excel","path":"<путь источника>","sheet":"<лист из его профиля>"}. НЕ используй одиночный source и inline.');
+    base.push('- Главный источник (первый) — БЕЗ prefix. Каждому следующему задай "prefix": "<id>_" (например "src2_").');
+    base.push('- Поля не-главных источников в формулах мер и field измерений указывай С префиксом (например "src2_Сумма").');
+    base.push('- Связи: "joins":[{"left":"<idГлавного>.<Поле>","right":"<idДругой>.<Поле>","how":"rename"}] — поле right переименуется в имя left, таблицы свяжутся. Связывай по совпадающим по смыслу колонкам (даты, коды, названия) — они есть в обоих профилях.');
+    base.push('- Поля, по которым связываешь, НЕ включай в префиксные переименования: указывай их сырыми именами в joins.');
+    return base.join('\n');
+  }
+  base.push('Безопасный профиль данных (значений нет):');
+  base.push(JSON.stringify(safeProfile, null, 2));
+  if (excelLib) base.push('\nРежим данных: РЕАЛЬНЫЙ EXCEL на шаре Qlik. source обязателен вида: {"type":"excel","path":"' + excelLib + '","sheet":"<имя листа профиля>"} — НЕ inline, синтетику не придумывай.');
+  return base.join('\n');
 }
 
 // repairPrompt(spec, errors) — запрос исправления: со схемой и всеми ошибками
@@ -71,13 +90,13 @@ function repairPrompt(spec, errors) {
 }
 
 // generateSpec({safeProfile, description, aiCfg, excelLib, log}) → {spec, attempts}
-async function generateSpec({ safeProfile, description, aiCfg, excelLib, log = () => {} }) {
+async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, log = () => {} }) {
   const maxAttempts = 3;
   let spec = null;
-  let prompt = buildPrompt(safeProfile, description, excelLib);
+  let prompt = buildPrompt(safeProfile, description, excelLib, multi);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log('Попытка ' + attempt + ' из ' + maxAttempts + ': запрос к модели…');
-    const text = await chat(aiCfg, buildSystem(excelLib), prompt);
+    const text = await chat(aiCfg, buildSystem(excelLib, !!multi), prompt);
     try {
       spec = normalizeSpecTypes(extractJson(text));
     } catch (e) {

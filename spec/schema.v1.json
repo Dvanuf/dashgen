@@ -6,7 +6,6 @@
   "required": [
     "version",
     "appName",
-    "source",
     "sheets"
   ],
   "additionalProperties": false,
@@ -55,6 +54,31 @@
       "items": {
         "$ref": "#/definitions/sheet"
       }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/sourceRef"
+          },
+          {
+            "$ref": "#/definitions/sourceRefInline"
+          },
+          {
+            "$ref": "#/definitions/sourceRefQvd"
+          }
+        ]
+      },
+      "description": "Несколько источников; при этом одиночный source не используется"
+    },
+    "joins": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/join"
+      },
+      "description": "Связи между источниками: rename — правое поле переименовывается в левое; key — поля уже совпадают; concat — склеить строки"
     }
   },
   "definitions": {
@@ -443,6 +467,131 @@
           }
         }
       ]
+    },
+    "sourceRef": {
+      "type": "object",
+      "required": [
+        "path",
+        "sheet"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-zА-Яа-яЁё0-9_ ]{1,40}$",
+          "description": "Идентификатор источника, на него ссылаются joins"
+        },
+        "type": {
+          "const": "excel"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^lib://"
+        },
+        "sheet": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Префикс всех полей источника (защита от синтетических ключей); требует fields"
+        }
+      },
+      "additionalProperties": false
+    },
+    "join": {
+      "type": "object",
+      "required": [
+        "left",
+        "right"
+      ],
+      "properties": {
+        "left": {
+          "type": "string",
+          "pattern": "^[^\\.]+\\.[^\\.]+$",
+          "description": "источник.поле — имя остаётся"
+        },
+        "right": {
+          "type": "string",
+          "pattern": "^[^\\.]+\\.[^\\.]+$",
+          "description": "источник.поле — переименовывается в левое (how=rename)"
+        },
+        "how": {
+          "enum": [
+            "rename",
+            "key",
+            "concat"
+          ],
+          "default": "rename"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceRefInline": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "table",
+        "fields",
+        "rows"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "inline"
+        },
+        "table": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceRefQvd": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qvd"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^lib://"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -501,24 +501,39 @@ async function streamGenerate(req, res, url) {
   const emit = sseStart(res);
   try {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-    const profile = (body.profile && body.profile.tables) ? body.profile : (lastProfile && lastProfile.safeProfile);
-    if (!profile) { emit({ type: 'error', message: 'Нужен безопасный профиль (сначала профилируйте источник)' }); return res.end(); }
     if (!body.description || !String(body.description).trim()) { emit({ type: 'error', message: 'Опишите отчёт словами — что показывать' }); return res.end(); }
-    if (profile.mode !== 'schema') { emit({ type: 'error', message: 'Ожидается профиль режима schema (вывод privacy), а не SourceProfile' }); return res.end(); }
+    // Мульти-источники: body.sources = [{id, excelLib, safeProfile}] — каждый уже профилирован
+    let multi = null;
+    if (Array.isArray(body.sources) && body.sources.length) {
+      multi = body.sources.map((x, i) => ({
+        id: String(x.id || ('src' + (i + 1))).slice(0, 40),
+        excelLib: String(x.excelLib || ''),
+        safeProfile: x.safeProfile,
+        main: i === 0
+      }));
+      for (const m of multi) {
+        if (!m.safeProfile || !m.safeProfile.tables) { emit({ type: 'error', message: 'Источник ' + m.id + ' без профиля' }); return res.end(); }
+      }
+    }
+    const profile = (body.profile && body.profile.tables) ? body.profile : (lastProfile && lastProfile.safeProfile);
+    if (!profile && !multi) { emit({ type: 'error', message: 'Нужен безопасный профиль (сначала профилируйте источник)' }); return res.end(); }
     const aiCfg = (CFG && CFG.ai) || null;
     if (!aiCfg) { emit({ type: 'error', message: 'В config.json нет блока ai (provider/baseUrl/model)' }); return res.end(); }
     // Профилированный файл на шаре ⇒ excel-режим по умолчанию, даже без явного excelLib
-    const excelLib = body.excelLib ? String(body.excelLib) : (lastProfile && lastProfile.excelLib) || null;
+    const excelLib = multi ? null : (body.excelLib ? String(body.excelLib) : (lastProfile && lastProfile.excelLib) || null);
     if (excelLib) emit({ type: 'log', text: 'Файл на шаре — режим реального Excel: ' + excelLib });
+    if (multi) emit({ type: 'log', text: 'Источников: ' + multi.length + ' — ИИ свяжет их по полям' });
     const { generateSpec } = require('./src/ai/generate-spec');
     const r = await generateSpec({
       safeProfile: profile,
       description: String(body.description),
       aiCfg,
       excelLib,
+      multi,
       log: l => emit({ type: 'log', text: String(l) })
     });
-    privacy.journal(profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
+    if (multi) for (const m of multi) privacy.journal(m.safeProfile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
+    else privacy.journal(profile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
     emit({ type: 'log', text: 'Отправка профиля записана в журнал (logs/privacy-send.jsonl)' });
     emit({ type: 'done', spec: r.spec, attempts: r.attempts });
   } catch (e) {

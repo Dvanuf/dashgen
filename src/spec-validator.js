@@ -34,8 +34,21 @@ function normalizeSpecTypes(spec) {
   return spec;
 }
 
+// Нормализация источников: одиночный source → sources[0] (совместимость с ранними spec).
+// Возвращает spec с гарантированным sources-массивом или null, если источников нет.
+function normalizeSpecSources(spec) {
+  if (!spec || typeof spec !== 'object') return spec;
+  if (!spec.sources && spec.source) {
+    const src = { ...spec.source };
+    src.id = src.table || 'main';
+    spec.sources = [src];
+  }
+  return spec;
+}
+
 // validateSpec(spec) → { ok: true } | { ok: false, errors: [строки] }
 function validateSpec(spec) {
+  spec = normalizeSpecSources(spec);
   const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
   const ajv = new Ajv({ allErrors: true, strict: false });
   const validate = ajv.compile(schema);
@@ -73,6 +86,35 @@ function validateSpec(spec) {
         errors.push(`измерение «${d.title}» (${d.id}): поле «${d.field}» отсутствует в source.fields`);
       }
     });
+  }
+
+  // Источники: нужен хотя бы один; ровно один из source/sources; связи ссылаются на известные источники
+  if (spec && typeof spec === 'object') {
+    if (spec.source && Array.isArray(spec.sources) && spec.sources.length) {
+      errors.push('указаны и source, и sources — оставьте один вариант');
+    }
+    if (!spec.source && (!Array.isArray(spec.sources) || !spec.sources.length)) {
+      errors.push('не указан источник: нужен source или sources');
+    }
+    const ids = new Set((Array.isArray(spec.sources) ? spec.sources : []).map(x => x && x.id));
+    for (const j of Array.isArray(spec.joins) ? spec.joins : []) {
+      for (const side of ['left', 'right']) {
+        const sid = String(j[side] || '').split('.')[0];
+        if (!ids.has(sid)) errors.push(`join ${side} «${j[side]}» ссылается на неизвестный источник (известны: ${[...ids].join(', ') || 'нет'})`);
+      }
+    }
+    // одинаковые имена допустимы, если у одного из источников prefix (join защищает поле от префикса);
+    // иначе связь бессмысленна
+    const srcById = {};
+    for (const x of Array.isArray(spec.sources) ? spec.sources : []) srcById[x && x.id] = x;
+    for (const j of Array.isArray(spec.joins) ? spec.joins : []) {
+      const lf = String(j.left || '').split('.')[1], rf = String(j.right || '').split('.')[1];
+      if (lf && rf && lf === rf && j.how !== 'key') {
+        const ls = String(j.left).split('.')[0], rs2 = String(j.right).split('.')[0];
+        const hasPrefix = (srcById[ls] && srcById[ls].prefix) || (srcById[rs2] && srcById[rs2].prefix);
+        if (!hasPrefix) errors.push(`join ${j.left} ↔ ${j.right}: имена уже совпадают, связь не нужна (или how=key)`);
+      }
+    }
   }
 
   // Проверка ссылок: каждый id в объектах должен существовать в measures/dimensions
@@ -136,4 +178,4 @@ function loadSpec(specPath) {
   return spec;
 }
 
-module.exports = { validateSpec, loadSpec, normalizeSpecTypes };
+module.exports = { validateSpec, loadSpec, normalizeSpecTypes, normalizeSpecSources };

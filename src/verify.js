@@ -1,8 +1,11 @@
 // Проверка собранного приложения: ошибки объектов, число строк модели против ожидаемого.
 const { withSession, openAppById } = require('./engine');
+const { normalizeSpecSources } = require('./spec-validator');
 
 // verify(cfg, appId, spec, buildResult) → отчёт { objectsChecked, objectErrors: [], modelRows }
 async function verify(cfg, appId, spec, buildResult) {
+  spec = normalizeSpecSources(spec);
+  const mainSource = Array.isArray(spec.sources) ? spec.sources[0] : spec.source;
   return withSession(cfg, async global => {
     const app = await openAppById(global, appId);
     const report = { objectsChecked: 0, objectErrors: [], hyperCubes: [] };
@@ -21,14 +24,14 @@ async function verify(cfg, appId, spec, buildResult) {
     }
 
     // Сверка числа строк для inline-источника: Count(первое поле) против числа строк в spec
-    if (spec.source.type === 'inline') {
-      const field = spec.source.fields[0];
+    if (mainSource && mainSource.type === 'inline') {
+      const field = mainSource.fields[0];
       try {
         const res = await app.evaluate(`Count([${field}])`);
         const n = Number(res);
         report.modelRows = Number.isFinite(n) ? n : null;
-        report.expectedRows = spec.source.rows.length;
-        report.rowsMatch = Number.isFinite(n) && n === spec.source.rows.length;
+        report.expectedRows = mainSource.rows.length;
+        report.rowsMatch = Number.isFinite(n) && n === mainSource.rows.length;
       } catch (e) {
         report.modelRows = null;
         report.rowsError = e.message;

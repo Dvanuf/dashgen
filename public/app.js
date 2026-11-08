@@ -8,7 +8,8 @@ const icons = () => { if (window.lucide) window.lucide.createIcons({ attrs: { wi
 
 const state = {
   config: null, spec: null, specName: null, specHash: null,
-  approvals: [], streams: [], specChecked: false, built: false, published: false, verifyOk: false
+  approvals: [], streams: [], specChecked: false, built: false, published: false, verifyOk: false,
+  sources: []
 };
 
 const share = { rel: '', selected: null, status: null };

@@ -72,7 +72,12 @@
           <div class="dg-rowbtn" id="dg-share-actions" style="display:none;">
             <input class="dg-input" id="dg-excel-sheet" type="text" placeholder="Лист (например Сводно UPD)" style="flex:none;width:200px;">
             <button class="dg-btn" id="dg-btn-profile-share" type="button"><i data-lucide="table" aria-hidden="true"></i>Профилировать</button>
+            <button class="dg-btn" id="dg-btn-add-source" type="button" data-tooltip="Добавить профилированный файл как источник (их может быть несколько)"><i data-lucide="plus-circle" aria-hidden="true"></i>Добавить источник</button>
             <button class="dg-btn dg-btn--p" id="dg-btn-gen-share" type="button"><i data-lucide="database" aria-hidden="true"></i>Сгенерировать spec из Excel</button>
+          </div>
+          <div class="dg-rowbtn dg-hidden" id="dg-sources-row">
+            <span class="dg-note">Источники дашборда:</span>
+            <span id="dg-sources-chips" class="dg-chips"></span>
           </div>
           <p class="dg-note" id="dg-share-selected" style="margin:8px 0 0;">Выберите файл кликом — путь lib:// построится сам, inline не будет.</p>
         </div>
