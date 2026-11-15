@@ -363,6 +363,37 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
+// ── диалог: правка созданного отчёта беседой с моделью ──
+state.dialog = [];
+$('#dg-btn-dialog').addEventListener('click', async () => {
+  const btn = $('#dg-btn-dialog'), logEl = $('#dg-dialog-log'), inp = $('#dg-dialog-in');
+  const message = inp.value.trim();
+  if (!message) { logEl.textContent = 'Опишите правку словами.'; return; }
+  if (!state.spec) { logEl.textContent = 'Сначала откройте или сгенерируйте spec (шаг «Спецификация»).'; return; }
+  btn.disabled = true;
+  logEl.textContent = (logEl.textContent ? logEl.textContent + '\n\n' : '') + 'Вы: ' + message + '\nМодель работает…';
+  try {
+    const payload = state.specName ? { specName: state.specName } : { spec: state.spec };
+    payload.app = $('#dg-dialog-app').value.trim() || undefined;
+    payload.message = message;
+    payload.history = state.dialog;
+    const r = await api('/api/patch-dialog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    state.spec = r.spec;
+    state.dialog.push({ user: message, assistant: r.reply });
+    inp.value = '';
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    let t = state.dialog.map(d => 'Вы: ' + d.user + '\nМодель: ' + d.assistant).join('\n\n');
+    if ((r.log || []).length) t += '\n\n[' + (r.log || []).join('; ') + ']';
+    logEl.textContent = t;
+    logEl.classList.remove('is-err'); logEl.classList.add('is-ok');
+  } catch (e) {
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+    logEl.classList.add('is-err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ── фиксация правок из Qlik-клиента: состояние листов → spec (fixed:true) ──
 $('#dg-btn-sync').addEventListener('click', async () => {
   const btn = $('#dg-btn-sync'), logEl = $('#dg-sync-log');

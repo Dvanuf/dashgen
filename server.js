@@ -407,6 +407,47 @@ const api = {
     return [200, { spec: fixedSpec, stats, saved: !!specName, appId: resolved }];
   },
 
+  // ── диалог: правка созданного отчёта беседой с моделью ──
+  'POST /api/patch-dialog': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!CFG) return [500, { error: 'config.json не найден' }];
+    const aiCfg = CFG.ai;
+    if (!aiCfg) return [500, { error: 'В config.json нет блока ai' }];
+    if (!body.message || !String(body.message).trim()) return [400, { error: 'Пустое сообщение' }];
+    let spec = null, specName = null, fp = null;
+    if (body.specName) {
+      specName = String(body.specName);
+      fp = specPathByName(specName).fp;
+      spec = loadSpec(fp);
+    } else if (body.spec && typeof body.spec === 'object') {
+      spec = body.spec;
+    } else return [400, { error: 'Нужен spec: откройте или сгенерируйте его' }];
+    const logs = [];
+    const log = m => logs.push(String(m));
+    // Фактическое состояние приложения поверх spec: правки из клиента не теряются
+    if (body.app) {
+      const qrs = require('./src/qrs');
+      const app = String(body.app).trim();
+      const resolved = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app)
+        ? app : (await qrs.findAppByName(CFG, app) || {}).id;
+      if (!resolved) return [400, { error: 'приложение не найдено: ' + app }];
+      const { syncBack } = require('./src/sync-back');
+      const r = await syncBack(CFG, resolved, spec, log);
+      spec = r.spec;
+      log('Состояние приложения перечитано (правки из клиента учтены)');
+    }
+    const { patchDialog } = require('./src/ai/patch-spec');
+    const r = await patchDialog({
+      spec,
+      history: Array.isArray(body.history) ? body.history : [],
+      instruction: String(body.message),
+      aiCfg,
+      log
+    });
+    if (specName && fp) fs.writeFileSync(fp, JSON.stringify(r.spec, null, 2));
+    return [200, { spec: r.spec, reply: r.reply, attempts: r.attempts, log: logs, saved: !!specName }];
+  },
+
   // ── платформа/модель ИИ ──
   'GET /api/ai-presets': () => {
     const presets = [

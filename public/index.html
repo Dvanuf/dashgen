@@ -187,10 +187,22 @@
           <p class="dg-cardtitle"><i data-lucide="save" aria-hidden="true"></i>Зафиксировать правки из Qlik-клиента</p>
           <div class="dg-rowbtn" style="margin-top:0;">
             <input class="dg-input" id="dg-sync-app" type="text" placeholder="Приложение: ID или имя (например, SUNLIGHT_Dashgen_demo)" style="flex:1;">
-            <button class="dg-btn dg-btn--p" id="dg-btn-sync" type="button"><i data-lucide="download" aria-hidden="true"></i>Зафиксировать в spec</button>
+            <button class="dg-btn" id="dg-btn-sync" type="button"><i data-lucide="download" aria-hidden="true"></i>Зафиксировать в spec</button>
           </div>
           <p class="dg-note" style="margin-top:6px;">Листы и объекты приложения перечитываются в spec с пометкой fixed — ИИ-перегенерация и пересборка их не перезаписывают. Пересборка: «Сборка и проверка» → режим «Подключиться к существующему».</p>
           <pre class="dg-code dg-hidden" id="dg-sync-log"></pre>
+        </div>
+        <div class="dg-card" style="margin-top:12px;">
+          <p class="dg-cardtitle"><i data-lucide="messages-square" aria-hidden="true"></i>Правка диалогом с моделью</p>
+          <div class="dg-rowbtn" style="margin-top:0;">
+            <input class="dg-input" id="dg-dialog-app" type="text" placeholder="Приложение для перечитывания (ID или имя) — можно пусто" style="flex:1;">
+          </div>
+          <div class="dg-rowbtn" style="margin-top:8px;align-items:flex-start;">
+            <textarea class="dg-input" id="dg-dialog-in" rows="2" style="flex:1;min-height:50px;resize:vertical;" placeholder="Например: «перенеси таблицу вниз и сделай бары по регионам красными», «добавь датчик выполнения плана»"></textarea>
+            <button class="dg-btn dg-btn--p" id="dg-btn-dialog" type="button" style="flex:none;"><i data-lucide="send" aria-hidden="true"></i>Отправить</button>
+          </div>
+          <pre class="dg-code" id="dg-dialog-log" style="min-height:60px;white-space:pre-wrap;">Диалог пуст — напишите первую правку. Модель обновит spec и ответит, что изменила.</pre>
+          <p class="dg-note" style="margin-top:6px;">Чтобы правки дошли до Qlik — «Сборка и проверка» → режим «Подключиться к существующему» → «Собрать».</p>
         </div>
         <div class="dg-card" style="margin-top:12px;">
           <p class="dg-cardtitle" style="margin-top:0;"><i data-lucide="repeat" aria-hidden="true"></i>Цикл правки</p>
