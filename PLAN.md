@@ -19,10 +19,11 @@ Dashgen собирает дашборды QSEoW из Excel с ИИ (спека v
 ## Этапы
 
 ### Этап 1. QRS-reload вместо заблокированного doReload
-- 1.1 `src/qrs.js`: createReloadTask (POST /qrs/reloadtask), startTask (POST /qrs/task/{id}/start — 204), waitForTask (опрос /qrs/executionresult/full, успех = status 7), uploadExtension (multipart, HTTP 201). [ ]
-- 1.2 `src/builder/index.js`: doReload → при false doSave + QRS-задача; diagnoseReloadFailure при падении; конфиг `reload: 'auto'|'qrs'`. [ ]
-- 1.3 server.js streamBuild — лог QRS-ожидания в SSE. [ ]
-- Проверка: `node cli.js build examples/spec-inline.json --verify`. [ ]
+- 1.1 `src/qrs.js`: createReloadTask (POST /qrs/reloadtask), startTask (POST /qrs/task/{id}/start — 204), waitForTask (опрос /qrs/executionresult/full, успех = status 7), uploadExtension (multipart, HTTP 201). [x]
+- 1.2 `src/builder/index.js`: doReload → при false doSave + QRS-задача; diagnoseReloadFailure при падении; конфиг `reload: 'auto'|'qrs'`. [x]
+- 1.3 server.js streamBuild — лог QRS-ожидания в SSE. [x] (лог уже течёт через log-колбэк — правок не потребовалось)
+- Проверка: `node cli.js build examples/spec-sales-inline.json --verify` — сборка прошла (doReload сработал для inline-данных); QRS-путь проверен напрямую: задача создана/запущена, статус 7, удалена. [x]
+- Попутно исправлен баг валидатора (normalizeSpecSources не удалял source после нормализации — «и source, и sources» валил каждую одиночную спеку). [x]
 
 ### Этап 2. Каталог базовых макетов (зоны) и выбор шаблона
 - 2.1 `src/builder/layouts/*.json` — зоны сетки 24 колонок: фильтры (row 0) → KPI → графики → детализация; слоты с ролями. [ ]

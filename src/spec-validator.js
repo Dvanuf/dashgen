@@ -42,6 +42,7 @@ function normalizeSpecSources(spec) {
     const src = { ...spec.source };
     src.id = src.table || 'main';
     spec.sources = [src];
+    delete spec.source; // иначе проверка «и source, и sources» валила каждую одиночную спеку
   }
   return spec;
 }

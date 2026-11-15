@@ -1,6 +1,7 @@
 // Сборка приложения Qlik из spec.json: приложение → загрузка → мастер-элементы → объекты → листы.
 const { withSession, deleteAppsByName } = require('../engine');
 const { generateScript } = require('../qvs-generator');
+const qrs = require('../qrs');
 const objects = require('./objects');
 const T = require('./templates');
 
@@ -41,18 +42,39 @@ async function build(spec, cfg, log = console.log) {
     if (removed.length) log('Удалено старых приложений с тем же именем: ' + removed.length);
 
     const created = await global.createApp(spec.appName);
-    const app = await global.openDoc(created.qAppId);
+    let app = await global.openDoc(created.qAppId);
     log('Приложение создано: ' + created.qAppId);
 
     await app.setScript(generateScript(spec));
-    if (!(await app.doReload(0, false, false))) {
-      const diagnosis = await diagnoseReloadFailure(app, spec);
-      const err = new Error(diagnosis);
-      err.qlikReloadFailure = true;
-      err.diagnosis = diagnosis;
-      throw err;
+
+    // Перезагрузка: сначала обычный doReload; на серверах со стандартным режимом
+    // движка он мгновенно возвращает false — тогда QRS-задача (cfg.reload: 'qrs' — сразу задача).
+    let reloaded = false;
+    if ((cfg.reload || 'auto') !== 'qrs') reloaded = await app.doReload(0, false, false);
+    if (!reloaded) {
+      log('doReload недоступен (стандартный режим движка) — перезагрузка через QRS-задачу…');
+      await app.doSave(); // задача читает скрипт из сохранённого приложения
+      const taskId = await qrs.createReloadTask(cfg, created.qAppId, 'Dashgen reload — ' + spec.appName);
+      let res;
+      try {
+        await qrs.startTask(cfg, taskId);
+        res = await qrs.waitForTask(cfg, taskId, { timeoutMin: cfg.reloadTimeoutMin || 30 });
+      } finally {
+        await qrs.deleteReloadTask(cfg, taskId); // задача одноразовая
+      }
+      if (!res.ok) {
+        const tail = (res.messages || []).filter(Boolean).slice(-4).join('\n');
+        const diagnosis = tail || await diagnoseReloadFailure(app, spec);
+        const err = new Error('QRS-перезагрузка не удалась (status=' + res.status + '): ' + diagnosis.split('\n')[0]);
+        err.qlikReloadFailure = true;
+        err.diagnosis = diagnosis;
+        throw err;
+      }
+      log('Данные загружены (QRS-задача)');
+      app = await global.openDoc(created.qAppId); // свежий хэндл после внешней перезагрузки
+    } else {
+      log('Данные загружены');
     }
-    log('Данные загружены');
 
     const dimMap = {}, meaMap = {};
     for (const d of spec.dimensions || []) dimMap[d.id] = await objects.createMasterDimension(app, d);
