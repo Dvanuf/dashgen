@@ -5,8 +5,7 @@
   "type": "object",
   "required": [
     "version",
-    "appName",
-    "sheets"
+    "appName"
   ],
   "additionalProperties": false,
   "properties": {
@@ -50,10 +49,33 @@
     },
     "sheets": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "$ref": "#/definitions/sheet"
-      }
+      },
+      "description": "Листы с объектами; обязателен либо sheets, либо design.layout (макет)"
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layout": {
+          "enum": ["overview", "detail", "compact"],
+          "description": "Шаблон макета из каталога src/builder/layouts: зоны фильтры→KPI→графики→детализация"
+        },
+        "sheetTitle": {
+          "type": "string",
+          "description": "Заголовок листа, сгенерированного из макета (по умолчанию — название макета)"
+        },
+        "fill": {
+          "type": "object",
+          "description": "Наполнение слотов макета: { id слота: { field | measure | dimension, measures, dimensions, title } }"
+        },
+        "brand": {
+          "enum": ["sunlight"],
+          "description": "Фирменный бренд-пак: палитра и расширения оформления"
+        }
+      },
+      "description": "Оформление: выбор макета, наполнение слотов, бренд"
     },
     "sources": {
       "type": "array",
@@ -267,6 +289,10 @@
         },
         "title": {
           "type": "string"
+        },
+        "fixed": {
+          "type": "boolean",
+          "description": "Правка зафиксирована: ИИ-перегенерация и пересборка этот объект не перезаписывают"
         },
         "measure": {
           "type": "string",

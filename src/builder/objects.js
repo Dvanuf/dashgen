@@ -22,7 +22,8 @@ function loadTemplate(type) {
 function buildHypercube(ospec, dimMap, meaMap) {
   const dims = (ospec.dimensions || (ospec.dimension ? [ospec.dimension] : []))
     .map(did => ({ qLibraryId: dimMap[did], qDef: {} }));
-  const meas = (ospec.measures || []).map(mid => meaMap[mid])
+  // measures или одиночное measure (kpi/gauge)
+  const meas = (ospec.measures || (ospec.measure ? [ospec.measure] : [])).map(mid => meaMap[mid])
     .filter(Boolean).map(id => ({ qLibraryId: id, qDef: {} }));
   const total = dims.length + meas.length;
   return {

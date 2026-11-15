@@ -3,6 +3,7 @@ const { withSession, deleteAppsByName } = require('../engine');
 const { generateScript } = require('../qvs-generator');
 const qrs = require('../qrs');
 const objects = require('./objects');
+const archetypes = require('./archetypes');
 const T = require('./templates');
 
 // Диагноз после неудачного reload: поля, которые нужны мерам/измерениям,
@@ -37,6 +38,8 @@ async function diagnoseReloadFailure(app, spec) {
 // build(spec, cfg, log) → { appId, appName, objects: [{id, type, title}], sheets: n }
 // log — куда пишется журнал сборки (консоль CLI или интерфейс)
 async function build(spec, cfg, log = console.log) {
+  // Базовый макет: spec.design.layout + design.fill → готовые sheets с позициями слотов
+  if (spec.design && spec.design.layout) spec = archetypes.applyLayout(spec, log);
   return withSession(cfg, async global => {
     const removed = await deleteAppsByName(global, spec.appName);
     if (removed.length) log('Удалено старых приложений с тем же именем: ' + removed.length);

@@ -1,0 +1,27 @@
+{
+  "id": "overview",
+  "title": "Обзор",
+  "description": "Сводный дашборд: фильтры сверху, полоса KPI и гейджа, динамика по периодам со структурой, внизу — детализация и распределения",
+  "grid": { "cols": 24, "rows": 12 },
+  "zones": [
+    { "id": "filters", "title": "Фильтры", "row": 0, "rowspan": 1 },
+    { "id": "kpi", "title": "Ключевые показатели", "row": 1, "rowspan": 2 },
+    { "id": "charts", "title": "Графики", "row": 3, "rowspan": 6 },
+    { "id": "detail", "title": "Детализация", "row": 9, "rowspan": 3 }
+  ],
+  "slots": [
+    { "id": "flt-1", "zone": "filters", "type": "listbox", "col": 0, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 1 — поле измерения" },
+    { "id": "flt-2", "zone": "filters", "type": "listbox", "col": 6, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 2 — поле измерения" },
+    { "id": "flt-3", "zone": "filters", "type": "listbox", "col": 12, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 3 — поле измерения" },
+    { "id": "flt-4", "zone": "filters", "type": "listbox", "col": 18, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 4 — поле измерения" },
+    { "id": "kpi-1", "zone": "kpi", "type": "kpi", "col": 0, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "главный показатель (сумма)" },
+    { "id": "kpi-2", "zone": "kpi", "type": "kpi", "col": 6, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "второй показатель (среднее или количество)" },
+    { "id": "kpi-3", "zone": "kpi", "type": "kpi", "col": 12, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "третий показатель (количество или доля)" },
+    { "id": "gauge-1", "zone": "kpi", "type": "gauge", "col": 18, "row": 1, "colspan": 6, "rowspan": 2, "role": "gauge", "roleTitle": "показатель для датчика (выполнение, доля)" },
+    { "id": "combo-trend", "zone": "charts", "type": "combochart", "col": 0, "row": 3, "colspan": 16, "rowspan": 6, "role": "trend", "roleTitle": "динамика по периодам: измерение-период + 1–2 меры" },
+    { "id": "pie-structure", "zone": "charts", "type": "piechart", "col": 16, "row": 3, "colspan": 8, "rowspan": 6, "role": "structure", "roleTitle": "структура по категории: измерение + мера" },
+    { "id": "bar-breakdown-1", "zone": "detail", "type": "barchart", "col": 0, "row": 9, "colspan": 8, "rowspan": 3, "role": "breakdown", "roleTitle": "распределение по измерению: измерение + мера" },
+    { "id": "tab-detail", "zone": "detail", "type": "table", "col": 8, "row": 9, "colspan": 10, "rowspan": 3, "role": "detailTable", "roleTitle": "детализация: 1–3 измерения + 2–4 меры" },
+    { "id": "bar-breakdown-2", "zone": "detail", "type": "barchart", "col": 18, "row": 9, "colspan": 6, "rowspan": 3, "role": "breakdown", "roleTitle": "распределение по другому измерению: измерение + мера" }
+  ]
+}
