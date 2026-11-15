@@ -190,11 +190,19 @@ const api = {
   // Шара монтируется в /Volumes/Users (smb://onyx-qlick.onyx.local/Users);
   // работаем только внутри личной папки разработчика — наружу не выходим.
 
-  'GET /api/share-status': () => {
+  'GET /api/share-status': async () => {
     const cfgShare = (CFG && CFG.share) || {};
     const mount = cfgShare.mountRoot || '/Volumes/Users';
     const userDir = cfgShare.userDir || 'anufriev_d_v';
     const root = path.join(mount, userDir);
+    const smbHost = cfgShare.smbHost || 'onyx-qlick.onyx.local';
+    if (!(await hostReachable(smbHost))) {
+      return [200, {
+        mounted: false, unreachable: true, mount, userDir, root,
+        connection: cfgShare.connection || 'Рабочие_папки_разработчиков',
+        error: 'сервер ' + smbHost + ' недоступен (DNS) — проверьте корпоративную сеть/VPN'
+      }];
+    }
     return [200, {
       mounted: fs.existsSync(mount),
       mount, userDir,
@@ -209,9 +217,12 @@ const api = {
     const cfgShare = (CFG && CFG.share) || {};
     const host = cfgShare.smbHost || 'onyx-qlick.onyx.local';
     const share = cfgShare.smbShare || 'Users';
+    if (!(await hostReachable(host))) {
+      return [200, { mounted: false, unreachable: true, error: 'сервер ' + host + ' недоступен (DNS) — проверьте корпоративную сеть/VPN' }];
+    }
     try {
       await new Promise((resolve, reject) => {
-        execFile('osascript', ['-e', `mount volume "smb://${host}/${share}"`], { timeout: 30000 }, err => err ? reject(err) : resolve());
+        execFile('osascript', ['-e', `mount volume "smb://${host}/${share}"`], { timeout: 15000 }, err => err ? reject(err) : resolve());
       });
     } catch (e) {
       return [500, { error: 'Не удалось смонтировать шару (проверьте доступ и креды в Finder): ' + e.message.slice(0, 200) }];
@@ -219,11 +230,15 @@ const api = {
     return [200, { mounted: fs.existsSync(cfgShare.mountRoot || '/Volumes/Users') }];
   },
 
-  'GET /api/share-files': (req, res, url) => {
+  'GET /api/share-files': async (req, res, url) => {
     const cfgShare = (CFG && CFG.share) || {};
     const mount = cfgShare.mountRoot || '/Volumes/Users';
     const userDir = cfgShare.userDir || 'anufriev_d_v';
     const root = path.resolve(path.join(mount, userDir));
+    const smbHost = cfgShare.smbHost || 'onyx-qlick.onyx.local';
+    if (!(await hostReachable(smbHost))) {
+      return [200, { mounted: false, unreachable: true, folders: [], files: [], error: 'сервер ' + smbHost + ' недоступен (DNS) — проверьте корпоративную сеть/VPN' }];
+    }
     if (!fs.existsSync(mount)) return [200, { mounted: false, folders: [], files: [] }];
     if (!fs.existsSync(root)) return [200, { mounted: true, folders: [], files: [], error: 'Папка ' + userDir + ' на шаре не найдена' }];
     const sub = url.searchParams.get('sub') || '';

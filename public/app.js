@@ -1029,6 +1029,13 @@ async function shareLoad() {
   const st = await api('/api/share-status');
   share.status = st;
   const badge = $('#dg-share-status');
+  if (st.unreachable) {
+    badge.textContent = 'сервер недоступен (сеть/VPN)';
+    badge.className = 'dg-badge dg-badge--warn';
+    $('#dg-btn-share-mount').classList.remove('dg-hidden');
+    $('#dg-share-list').innerHTML = '<p class="dg-note">' + esc(st.error || 'сервер недоступен') + '.</p>';
+    return;
+  }
   if (st.mounted && st.exists) {
     badge.textContent = 'шара подключена';
     badge.className = 'dg-badge dg-badge--ok';
@@ -1049,8 +1056,10 @@ async function shareLoad() {
 $('#dg-btn-share-mount').addEventListener('click', async () => {
   const badge = $('#dg-share-status');
   badge.textContent = 'подключаю…';
-  try { await api('/api/share-mount', { method: 'POST' }); }
-  catch (e) { badge.textContent = 'ошибка подключения'; return; }
+  try {
+    const r = await api('/api/share-mount', { method: 'POST' });
+    if (r.error) { badge.textContent = r.error; return; }
+  } catch (e) { badge.textContent = 'ошибка подключения'; return; }
   await shareLoad();
 });
 
