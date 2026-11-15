@@ -168,7 +168,7 @@ async function build(spec, cfg, log = console.log, opts = {}) {
     await app.doSave();
     const name = mode === 'attach' ? (opts.target || spec.appName) : spec.appName;
     log('Готово. Приложение «' + name + '» (ID ' + appId + ') в Hub → Work.');
-    return { appId, appName: name, objects: createdObjects, sheets: spec.sheets.length, mode };
+    return { appId, appName: name, objects: createdObjects, sheets: spec.sheets.length, mode, appliedSpec: spec };
   });
 }
 

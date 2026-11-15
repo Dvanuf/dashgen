@@ -48,9 +48,10 @@ Dashgen собирает дашборды QSEoW из Excel с ИИ (спека v
 - Попутно: макеты переведены на гарантированно рендерящиеся типы (combo→linechart, pie→barchart) — combochart/piechart из createFromTemplate клиентом не рисуются (известная проблема, см. docs/KNOWN-ISSUES.md); templates/*.json обновлены снятием extract-templates.js с текущего сервера. [x]
 
 ### Этап 5. Verify-цикл с условиями
-- 5.1 `src/verify-all.js` (порт verify-all.mjs): дубли листов, children↔cells по именам, гиперкубы («данные по требованию» стековых), сироты, листбоксы фильтров, условия по объектам спеки. [ ]
-- 5.2 Встраивание в cli build/patch --verify и self-heal streamBuild. [ ]
-- 5.3 `docs/KNOWN-ISSUES.md` — свод граблей. [ ]
+- 5.1 `src/verify-all.js` (порт verify-all.mjs): дубли листов, доступность каждого cell по имени/типу, гиперкубы (qError/пустая модель/«данные по требованию»), сироты по cells, листбоксы фильтров, условия приёмки по объектам appliedSpec (тип, меры в определении, KPI-значение > 0), статика макета (fill + пересечения). [x]
+- 5.2 Встроено: CLI `build/patch --verify-all` (код 2 при проблемах); streamBuild — после verify, отчёт в SSE; verifyAll получает appliedSpec из builder (свойства, не layout: меры — qHyperCubeDef.qMeasures). [x]
+- 5.3 `docs/KNOWN-ISSUES.md` — свод граблей (doReload→QRS, combo/pie из слепков, gauge 0×0, дубли мастеров, корневые объекты и getChildInfos, сироты по cells, лимиты QRS). [x]
+- Проверка: `patch --verify-all` на приложении «Обзор» — 13/13 объектов ✔, чисто. [x]
 
 ### Этап 6. Бренд-пак SUNLIGHT
 - 6.1 `brand/sunlight/`: палитра (#C8102E, #D8C6A5, #343434, #1B8A00, фон #F2EEE6, Mazzard M), расширения sl-theme-light/sl-logo/sl-info (источник: sunlight-qlik-theme + /tmp/sl-info). [ ]

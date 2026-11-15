@@ -595,7 +595,12 @@ async function streamBuild(req, res, url) {
       const buildResult = await builder.build(spec, CFG, log, buildOpts);
       const verifyReport = await verify(CFG, buildResult.appId, spec, buildResult);
       printReport(verifyReport, log);
-      emit({ type: 'done', build: buildResult, verify: verifyReport });
+      // Полный цикл проверки: листы/cells/гиперкубы/сироты/фильтры/условия приёмки
+      const { verifyAll } = require('./src/verify-all');
+      const vAll = await verifyAll(CFG, buildResult.appId, buildResult.appliedSpec || spec);
+      for (const l of vAll.lines) log(l);
+      log(vAll.ok ? 'ЦИКЛ ПРОВЕРКИ: чисто' : 'ЦИКЛ ПРОВЕРКИ: проблем — ' + vAll.problems.length);
+      emit({ type: 'done', build: buildResult, verify: verifyReport, verifyAll: { ok: vAll.ok, problems: vAll.problems } });
       return res.end();
     } catch (e) {
       let diagnosis = e && e.qlikReloadFailure ? e.diagnosis : null;

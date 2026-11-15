@@ -60,7 +60,16 @@ async function main() {
       printReport(report);
       if (report.objectErrors.length || report.rowsMatch === false) process.exit(2);
     }
+    if (argv.includes('--verify-all')) process.exit(await runVerifyAll(cfg, result.appId, result.appliedSpec || spec));
     return;
+  }
+
+  // Полный цикл проверки: листы/cells/гиперкубы/сироты/фильтры/условия приёмки/макет
+  async function runVerifyAll(cfg, appId, spec) {
+    const { verifyAll, printVerifyAll } = require('./src/verify-all');
+    const report = await verifyAll(cfg, appId, spec);
+    printVerifyAll(report);
+    return report.ok ? 0 : 2;
   }
 
   // Список приложений сервера (цели для attach)
@@ -92,6 +101,7 @@ async function main() {
       printReport(report);
       if (report.objectErrors.length) process.exit(2);
     }
+    if (argv.includes('--verify-all')) process.exit(await runVerifyAll(cfg, result.appId, result.appliedSpec || spec));
     return;
   }
 
