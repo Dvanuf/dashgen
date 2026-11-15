@@ -386,9 +386,9 @@ const api = {
   // ── платформа/модель ИИ ──
   'GET /api/ai-presets': () => {
     const presets = [
-      { id: 'zai-open', label: 'Z.ai Open Platform', baseUrl: 'https://api.z.ai/api/paas/v4' },
-      { id: 'zai-coding', label: 'Z.ai Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4' },
-      { id: 'bigmodel', label: 'BigModel (Китай)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }
+      { id: 'zai-open', label: 'Z.ai Open Platform', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.3' },
+      { id: 'zai-coding', label: 'Z.ai Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', defaultModel: 'glm-5.3' },
+      { id: 'bigmodel', label: 'BigModel (Китай)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-5.3' }
     ];
     return [200, { presets, current: CFG && CFG.ai ? { baseUrl: CFG.ai.baseUrl, model: CFG.ai.model } : null }];
   },

@@ -7,10 +7,10 @@ const os = require('os');
 
 const DEFAULTS = {
   baseUrl: 'https://api.z.ai/api/paas/v4',
-  model: 'glm-4.6',
+  model: 'glm-5.3',
   temperature: 0,
   timeoutMs: 240000,
-  // генерация JSON не требует «размышлений»: отключаем thinking glm-4.6 (иначе запрос идёт минуты)
+  // генерация JSON не требует «размышлений»: отключаем thinking GLM (иначе запрос идёт минуты)
   thinking: { type: 'disabled' }
 };
 

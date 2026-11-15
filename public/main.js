@@ -322,7 +322,15 @@ async function saveAiEndpoint() {
   }
 }
 
-$('#dg-ai-endpoint').addEventListener('change', saveAiEndpoint);
+$('#dg-ai-endpoint').addEventListener('change', async () => {
+  // Последняя модель выбранной платформы подставляется автоматически (можно поправить вручную)
+  try {
+    const r = await api('/api/ai-presets');
+    const preset = (r.presets || []).find(p => p.baseUrl === $('#dg-ai-endpoint').value);
+    if (preset && preset.defaultModel) $('#dg-ai-model-in').value = preset.defaultModel;
+  } catch (_) { /* оставляем текущую модель */ }
+  await saveAiEndpoint();
+});
 $('#dg-ai-model-in').addEventListener('change', saveAiEndpoint);
 
 // ── проект ИИ: генерация spec (SSE, живой прогресс) ──
