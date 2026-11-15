@@ -125,6 +125,15 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, 
       prompt = repairPrompt({}, ['Ответ не является валидным JSON: ' + e.message]);
       continue;
     }
+    // Режим макета + реальный Excel: модель занята слотами и часто не указывает источник —
+    // путь и лист известны нам самим, подставляем вместо браковки попытки.
+    if (layoutDef && excelLib) {
+      if (!spec.source && !Array.isArray(spec.sources)) {
+        const main = (safeProfile.tables || []).filter(t => t.rowCount > 0).sort((a, b) => b.rowCount - a.rowCount)[0];
+        spec.source = { type: 'excel', path: excelLib, sheet: main ? main.name : undefined };
+        log('Источник подставлен автоматически: ' + excelLib + (main ? ' · лист ' + main.name : ''));
+      }
+    }
     const v = validateSpec(spec);
     if (v.ok && layoutDef && (!spec.design || spec.design.layout !== layoutDef.id)) {
       log('Попытка ' + attempt + ': модель вернула другой макет — возвращаю на исправление');
@@ -132,11 +141,20 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, 
       continue;
     }
     if (v.ok) {
-      // Режим реального Excel обязателен: если модель всё же вернула inline — бракуем с объяснением
-      if (excelLib && (!spec.source || spec.source.type !== 'excel')) {
+      // Режим реального Excel обязателен (кроме режима макета — источник подставлен выше)
+      if (excelLib && !layoutDef && (!spec.source || spec.source.type !== 'excel')) {
         log('Попытка ' + attempt + ': нужен source.type="excel" (реальные данные), модель вернула ' + (spec.source ? spec.source.type : 'без source') + ' — возвращаю на исправление');
         prompt = repairPrompt(spec, ['режим реального Excel: source должен быть {"type":"excel","path":"' + excelLib + '","sheet":"<лист>"}, inline и синтетика запрещены']);
         continue;
+      }
+      if (excelLib && layoutDef) {
+        // источник мог быть и в sources (многотабличный профиль) — проверяем оба варианта
+        const okExc = (spec.source && spec.source.type === 'excel') || (Array.isArray(spec.sources) && spec.sources.some(x => x.type === 'excel'));
+        if (!okExc) {
+          const main = (safeProfile.tables || []).filter(t => t.rowCount > 0).sort((a, b) => b.rowCount - a.rowCount)[0];
+          spec.source = { type: 'excel', path: excelLib, sheet: main ? main.name : undefined };
+          log('Источник подставлен автоматически: ' + excelLib);
+        } else if (spec.source) { delete spec.sources; } // не смешивать
       }
       log('Попытка ' + attempt + ': spec прошёл схему v1 и проверку ссылок');
       return { spec, attempts: attempt };
