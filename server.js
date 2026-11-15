@@ -530,6 +530,7 @@ async function streamGenerate(req, res, url) {
       aiCfg,
       excelLib,
       multi,
+      layout: body.layout ? String(body.layout) : null,
       log: l => emit({ type: 'log', text: String(l) })
     });
     if (multi) for (const m of multi) privacy.journal(m.safeProfile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');
@@ -584,11 +585,22 @@ async function streamBuild(req, res, url) {
 
     const builder = require('./src/builder');
     const { verify, printReport } = require('./src/verify');
+    // Режим: create (новое) или attach (правка существующего без удаления)
+    const buildOpts = {
+      mode: body.mode === 'attach' ? 'attach' : 'create',
+      target: body.target ? String(body.target) : undefined,
+      noReload: !!body.noReload
+    };
     try {
-      const buildResult = await builder.build(spec, CFG, log);
+      const buildResult = await builder.build(spec, CFG, log, buildOpts);
       const verifyReport = await verify(CFG, buildResult.appId, spec, buildResult);
       printReport(verifyReport, log);
-      emit({ type: 'done', build: buildResult, verify: verifyReport });
+      // Полный цикл проверки: листы/cells/гиперкубы/сироты/фильтры/условия приёмки
+      const { verifyAll } = require('./src/verify-all');
+      const vAll = await verifyAll(CFG, buildResult.appId, buildResult.appliedSpec || spec);
+      for (const l of vAll.lines) log(l);
+      log(vAll.ok ? 'ЦИКЛ ПРОВЕРКИ: чисто' : 'ЦИКЛ ПРОВЕРКИ: проблем — ' + vAll.problems.length);
+      emit({ type: 'done', build: buildResult, verify: verifyReport, verifyAll: { ok: vAll.ok, problems: vAll.problems } });
       return res.end();
     } catch (e) {
       let diagnosis = e && e.qlikReloadFailure ? e.diagnosis : null;
@@ -604,7 +616,7 @@ async function streamBuild(req, res, url) {
             const fixed = await fixBuild({ spec: working, diagnosis, aiCfg, log });
             working = fixed.spec;
             log('Модель исправила spec за ' + fixed.attempts + ' попыт(и) — пересобираю…');
-            const buildResult = await builder.build(working, CFG, log);
+            const buildResult = await builder.build(working, CFG, log, buildOpts);
             const verifyReport = await verify(CFG, buildResult.appId, working, buildResult);
             printReport(verifyReport, l => log(String(l)));
             log('ИТОГ: сборка после самоисправления прошла успешно');

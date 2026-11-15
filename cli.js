@@ -60,10 +60,73 @@ async function main() {
       printReport(report);
       if (report.objectErrors.length || report.rowsMatch === false) process.exit(2);
     }
+    if (argv.includes('--verify-all')) process.exit(await runVerifyAll(cfg, result.appId, result.appliedSpec || spec));
     return;
   }
 
-  console.log('Команды: check <spec.json> | profile <файл.xlsx|.qvd> [--sheet Лист1] | build <spec.json> [--verify]');
+  // Полный цикл проверки: листы/cells/гиперкубы/сироты/фильтры/условия приёмки/макет
+  async function runVerifyAll(cfg, appId, spec) {
+    const { verifyAll, printVerifyAll } = require('./src/verify-all');
+    const report = await verifyAll(cfg, appId, spec);
+    printVerifyAll(report);
+    return report.ok ? 0 : 2;
+  }
+
+  // Список приложений сервера (цели для attach)
+  if (cmd === 'apps') {
+    const cfg = loadConfig(configPath);
+    const qrs = require('./src/qrs');
+    const apps = await qrs.listApps(cfg);
+    for (const a of apps.sort((x, y) => x.name.localeCompare(y.name))) {
+      console.log((a.published ? '[опубл.] ' : '         ') + a.id + '  ' + a.name + (a.stream ? '  → ' + a.stream.name : ''));
+    }
+    console.log('Всего: ' + apps.length);
+    return;
+  }
+
+  // Правка существующего дашборда: подключение без удаления (reconcile листов из спеки)
+  if (cmd === 'patch') {
+    if (!argv[1]) throw new Error('Укажите spec: node cli.js patch spec.json --app <id|имя>');
+    const cfg = loadConfig(configPath);
+    const spec = loadSpec(argv[1]);
+    const builder = require('./src/builder');
+    const result = await builder.build(spec, cfg, console.log, {
+      mode: 'attach',
+      target: argValue(argv, '--app'),
+      noReload: argv.includes('--no-reload')
+    });
+    if (argv.includes('--verify')) {
+      const { verify, printReport } = require('./src/verify');
+      const report = await verify(cfg, result.appId, spec, result);
+      printReport(report);
+      if (report.objectErrors.length) process.exit(2);
+    }
+    if (argv.includes('--verify-all')) process.exit(await runVerifyAll(cfg, result.appId, result.appliedSpec || spec));
+    return;
+  }
+
+  // Фиксация правок из Qlik-клиента: фактическое состояние приложения → spec (fixed:true)
+  if (cmd === 'sync') {
+    if (!argv[1]) throw new Error('Укажите spec: node cli.js sync spec.json --app <id|имя>');
+    const cfg = loadConfig(configPath);
+    const spec = loadSpec(argv[1]);
+    const appId = argValue(argv, '--app') || spec.appId;
+    if (!appId) throw new Error('Укажите приложение: --app <id|имя> (или node cli.js apps — список)');
+    const { syncBack } = require('./src/sync-back');
+    const qrs = require('./src/qrs');
+    const resolved = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId)
+      ? appId : (await qrs.findAppByName(cfg, appId) || {}).id;
+    if (!resolved) throw new Error('приложение не найдено: ' + appId);
+    const { spec: fixedSpec } = await syncBack(cfg, resolved, spec, console.log);
+    const out = argValue(argv, '-o');
+    const inPlace = argv.includes('--in-place');
+    const outPath = out || (inPlace ? path.resolve(argv[1]) : path.resolve(argv[1]).replace(/\.json$/i, '.fixed.json'));
+    fs.writeFileSync(outPath, JSON.stringify(fixedSpec, null, 2));
+    console.log('Зафиксированный spec: ' + outPath + (inPlace ? ' (перезаписан исходный)' : ''));
+    return;
+  }
+
+  console.log('Команды: check <spec.json> | profile <файл.xlsx|.qvd> [--sheet Лист1] | build <spec.json> [--verify] | apps | patch <spec.json> --app <id|имя> [--no-reload] [--verify] | sync <spec.json> --app <id|имя> [--in-place|-o файл]');
   process.exit(cmd ? 1 : 0);
 }
 

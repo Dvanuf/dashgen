@@ -136,6 +136,13 @@
             <p class="dg-cardtitle"><i data-lucide="pen-line" aria-hidden="true"></i>Проект ИИ: сгенерировать spec по описанию</p>
             <textarea class="dg-input" id="dg-ai-desc" rows="3" style="width:100%;min-height:70px;resize:vertical;" placeholder="Отчёт по продажам за 2026: выручка и заказы по месяцам, топ категорий, разбивка по регионам. 4 KPI: выручка, заказы, средний чек, количество. Без реальных цифр и имён клиентов."></textarea>
             <div class="dg-rowbtn" style="margin-top:0;">
+              <span class="dg-note">Макет:</span>
+              <select class="dg-input" id="dg-ai-layout" style="flex:none;width:auto;">
+                <option value="">свободный (как раньше)</option>
+                <option value="overview">Обзор — фильтры, KPI, динамика, детализация</option>
+                <option value="detail">Детализация — KPI ×4, два графика, таблица, топ</option>
+                <option value="compact">Компакт — минимум: KPI ×3, график, таблица</option>
+              </select>
               <span class="dg-note">Платформа:</span>
               <select class="dg-input" id="dg-ai-endpoint" style="flex:none;width:auto;"></select>
               <span class="dg-note">Модель:</span>
@@ -217,6 +224,15 @@
           <li>Проверьте черновик в <b>Hub → Work</b> глазами — и переходите к «Публикация»</li>
         </ol>
         <p class="dg-sub">Черновик в личной области Work, виден автору. Повторная сборка заменяет приложение с тем же именем.</p>
+        <div class="dg-rowbtn">
+          <span class="dg-note">Режим:</span>
+          <select class="dg-input" id="dg-build-mode" style="flex:none;width:auto;">
+            <option value="create">Создать новое приложение</option>
+            <option value="attach">Подключиться к существующему (правки без удаления)</option>
+          </select>
+          <input class="dg-input dg-hidden" id="dg-build-target" type="text" placeholder="ID или имя приложения" style="flex:none;width:220px;">
+          <label class="dg-note dg-hidden" id="dg-build-noreload-row"><input type="checkbox" id="dg-build-noreload"> без перезагрузки данных (только оформление)</label>
+        </div>
         <div class="dg-rowbtn">
           <span class="dg-note">Spec:</span><b id="dg-build-spec-name">—</b>
           <button class="dg-btn dg-btn--p" id="dg-btn-build" type="button"><i data-lucide="layers" aria-hidden="true"></i>Собрать черновик в Qlik</button>

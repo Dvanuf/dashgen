@@ -35,6 +35,10 @@ function loadConfig(configPath) {
   cfg.privacy = cfg.privacy || {};
   cfg.privacy.bannedColumns = cfg.privacy.bannedColumns || [];
   cfg.privacy.bannedPatterns = cfg.privacy.bannedPatterns || ['инн', 'телефон', 'фио', 'паспорт', 'e-?mail'];
+  // Перезагрузка данных: 'auto' — doReload, при отказе QRS-задача; 'qrs' — всегда задача.
+  // На серверах со стандартным режимом движка doReload мгновенно возвращает false.
+  cfg.reload = cfg.reload || 'auto';
+  cfg.reloadTimeoutMin = cfg.reloadTimeoutMin || 30;
   return cfg;
 }
 

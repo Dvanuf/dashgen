@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const T = require('./templates');
+const brand = require('./brand');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates');
 
@@ -22,7 +23,8 @@ function loadTemplate(type) {
 function buildHypercube(ospec, dimMap, meaMap) {
   const dims = (ospec.dimensions || (ospec.dimension ? [ospec.dimension] : []))
     .map(did => ({ qLibraryId: dimMap[did], qDef: {} }));
-  const meas = (ospec.measures || []).map(mid => meaMap[mid])
+  // measures или одиночное measure (kpi/gauge)
+  const meas = (ospec.measures || (ospec.measure ? [ospec.measure] : [])).map(mid => meaMap[mid])
     .filter(Boolean).map(id => ({ qLibraryId: id, qDef: {} }));
   const total = dims.length + meas.length;
   return {
@@ -38,7 +40,7 @@ function buildHypercube(ospec, dimMap, meaMap) {
 
 // Создание по снятому шаблону: свойства клиента (цвета, оси, легенда) — из слепка,
 // данные и заголовок — из spec. Если шаблона нет — ошибка с подсказкой.
-async function createFromTemplate(app, ospec, dimMap, meaMap) {
+async function createFromTemplate(app, ospec, dimMap, meaMap, isSunlight) {
   const template = loadTemplate(ospec.type);
   if (!template) {
     throw new Error(`для типа «${ospec.type}» нет снятого шаблона templates/${ospec.type}.json — прогоните scripts/extract-templates.js`);
@@ -49,7 +51,8 @@ async function createFromTemplate(app, ospec, dimMap, meaMap) {
     visualization: ospec.type,
     showTitles: true,
     title: ospec.title || '',
-    qHyperCubeDef: buildHypercube(ospec, dimMap, meaMap)
+    qHyperCubeDef: buildHypercube(ospec, dimMap, meaMap),
+    ...(isSunlight ? { color: brand.brandColor() } : {})
   });
 }
 
@@ -62,6 +65,44 @@ const mea = id => ({ qLibraryId: id, qDef: {} });
 const dim = (field, label) => ({ qDef: { qFieldDefs: [field], qFieldLabels: [label] } });
 
 // ── Мастер-элементы ──
+// Список мастер-элементов через session-объект (Doc.GetDimensions в схеме enigma.js нет).
+// kind: 'DimensionList' | 'MeasureList' → [{qId, title}]
+async function listMasterRefs(app, kind) {
+  const isDim = kind === 'DimensionList';
+  const def = isDim
+    ? { qInfo: { qType: 'DimensionList' }, qDimensionListDef: { qType: 'dimension', qData: { title: '/qMetaDef/title' }, qMeta: '', qAppObjectListDef: { qType: 'dimension' } } }
+    : { qInfo: { qType: 'MeasureList' }, qMeasureListDef: { qType: 'measure', qData: { title: '/qMetaDef/title' }, qMeta: '', qAppObjectListDef: { qType: 'measure' } } };
+  const so = await app.createSessionObject(def);
+  const lo = await so.getLayout();
+  const list = isDim ? lo.qDimensionList : lo.qMeasureList;
+  const items = (list && list.qItems ? list.qItems : [])
+    .map(i => ({ qId: i.qInfo && i.qInfo.qId, title: (i.qMeta && i.qMeta.title) || '' }));
+  try { await so.destroySessionObject(); } catch (_) { /* session-only */ }
+  return items;
+}
+
+// resolveMasters(app, spec, log) → {dimMap, meaMap}: мастер-элементы переиспользуются
+// по названию (attach-режим правок — без дублей), создаются только отсутствующие.
+async function resolveMasters(app, spec, log = () => {}) {
+  const dimRefs = await listMasterRefs(app, 'DimensionList');
+  const meaRefs = await listMasterRefs(app, 'MeasureList');
+  const dimMap = {}, meaMap = {};
+  let reused = 0;
+  for (const d of spec.dimensions || []) {
+    const ex = dimRefs.find(x => x.title === d.title);
+    if (ex) { dimMap[d.id] = ex.qId; reused++; continue; }
+    dimMap[d.id] = await createMasterDimension(app, d);
+  }
+  for (const m of spec.measures || []) {
+    const ex = meaRefs.find(x => x.title === m.title);
+    if (ex) { meaMap[m.id] = ex.qId; reused++; continue; }
+    meaMap[m.id] = await createMasterMeasure(app, m);
+  }
+  log('Мастер-элементы: измерений ' + Object.keys(dimMap).length + ', мер ' + Object.keys(meaMap).length +
+    ' (переиспользовано: ' + reused + ')');
+  return { dimMap, meaMap };
+}
+
 async function createMasterDimension(app, d) {
   const obj = await app.createDimension({
     qInfo: { qType: 'dimension' },
@@ -82,20 +123,22 @@ async function createMasterMeasure(app, m) {
 }
 
 // ── Визуализации ──
-async function createKpi(app, ospec, meaMap) {
+async function createKpi(app, ospec, meaMap, isSunlight) {
   const id = ref(meaMap, ospec.measure, 'меру');
   return app.createObject({
     qInfo: { qType: 'kpi' }, visualization: 'kpi', showTitles: false, title: ospec.title || '',
     qHyperCubeDef: {
       qInitialDataFetch: [{ qTop: 0, qLeft: 0, qWidth: 1, qHeight: 1 }],
       qMeasures: [mea(id)]
-    }
+    },
+    ...(isSunlight ? { color: brand.brandColor() } : {})
   });
 }
 
-async function createLine(app, ospec, dimMap, meaMap) {
+async function createLine(app, ospec, dimMap, meaMap, isSunlight) {
   const dimId = ref(dimMap, ospec.dimension, 'измерение');
   return app.createObject(T.withDefaults(T.LINE_DEFAULTS, {
+    ...(isSunlight ? { color: brand.brandColor() } : {}),
     qInfo: { qType: 'linechart' }, visualization: 'linechart', showTitles: true, title: ospec.title || '',
     qHyperCubeDef: {
       qDimensions: [{ qLibraryId: dimId, qDef: { qSortCriterias: [{ qSortByNumeric: 1 }] } }],
@@ -106,9 +149,10 @@ async function createLine(app, ospec, dimMap, meaMap) {
   }));
 }
 
-async function createBar(app, ospec, dimMap, meaMap) {
+async function createBar(app, ospec, dimMap, meaMap, isSunlight) {
   const dimId = ref(dimMap, ospec.dimension, 'измерение');
   return app.createObject(T.withDefaults(T.BAR_DEFAULTS, {
+    ...(isSunlight ? { color: brand.brandColor() } : {}),
     qInfo: { qType: 'barchart' }, visualization: 'barchart', showTitles: true, title: ospec.title || '',
     qHyperCubeDef: {
       qDimensions: [{ qLibraryId: dimId, qDef: {} }],
@@ -150,13 +194,13 @@ async function createListbox(app, ospec) {
   });
 }
 
-// createObjectBySpec(app, ospec, dimMap, meaMap) → { id }
-async function createObjectBySpec(app, ospec, dimMap, meaMap) {
+// createObjectBySpec(app, ospec, dimMap, meaMap, isSunlight) → { id }
+async function createObjectBySpec(app, ospec, dimMap, meaMap, isSunlight) {
   let obj;
   switch (ospec.type) {
-    case 'kpi': obj = await createKpi(app, ospec, meaMap); break;
-    case 'linechart': obj = await createLine(app, ospec, dimMap, meaMap); break;
-    case 'barchart': obj = await createBar(app, ospec, dimMap, meaMap); break;
+    case 'kpi': obj = await createKpi(app, ospec, meaMap, isSunlight); break;
+    case 'linechart': obj = await createLine(app, ospec, dimMap, meaMap, isSunlight); break;
+    case 'barchart': obj = await createBar(app, ospec, dimMap, meaMap, isSunlight); break;
     case 'table': obj = await createTable(app, ospec, dimMap, meaMap); break;
     case 'listbox': obj = await createListbox(app, ospec); break;
     // Типы из снятых шаблонов клиента (templates/<тип>.json):
@@ -166,10 +210,10 @@ async function createObjectBySpec(app, ospec, dimMap, meaMap) {
     case 'treemap':
     case 'gauge':
     case 'pivot-table':
-      obj = await createFromTemplate(app, ospec, dimMap, meaMap); break;
+      obj = await createFromTemplate(app, ospec, dimMap, meaMap, isSunlight); break;
     default: throw new Error('Неизвестный тип объекта: ' + ospec.type + ' (в spec v1 разрешены: kpi, linechart, barchart, table, listbox, piechart, scatterplot, combochart, treemap, gauge, pivot-table)');
   }
   return { id: obj.id };
 }
 
-module.exports = { createMasterDimension, createMasterMeasure, createObjectBySpec };
+module.exports = { createMasterDimension, createMasterMeasure, createObjectBySpec, resolveMasters, listMasterRefs };

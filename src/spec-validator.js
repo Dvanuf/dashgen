@@ -42,6 +42,7 @@ function normalizeSpecSources(spec) {
     const src = { ...spec.source };
     src.id = src.table || 'main';
     spec.sources = [src];
+    delete spec.source; // иначе проверка «и source, и sources» валила каждую одиночную спеку
   }
   return spec;
 }
@@ -88,6 +89,21 @@ function validateSpec(spec) {
     });
   }
 
+  // Листы: обязателен непустой sheets ЛИБО design.layout (макет + наполнение слотов)
+  if (spec && spec.design && spec.design.layout) {
+    const layouts = require('./builder/layouts');
+    const archetypes = require('./builder/archetypes');
+    const layout = layouts.getLayout(spec.design.layout);
+    if (!layout) {
+      errors.push(`design.layout «${spec.design.layout}»: такого макета нет в каталоге (${layouts.listLayouts().map(l => l.id).join(', ')})`);
+    } else {
+      const mIds = new Set((spec.measures || []).map(m => m.id));
+      const dIds = new Set((spec.dimensions || []).map(d => d.id));
+      errors.push(...archetypes.validateFill(layout, spec.design.fill, mIds, dIds));
+    }
+  } else if (spec && (!Array.isArray(spec.sheets) || !spec.sheets.length)) {
+    errors.push('нужны листы sheets[] либо design.layout (шаблон макета)');
+  }
   // Источники: нужен хотя бы один; ровно один из source/sources; связи ссылаются на известные источники
   if (spec && typeof spec === 'object') {
     if (spec.source && Array.isArray(spec.sources) && spec.sources.length) {

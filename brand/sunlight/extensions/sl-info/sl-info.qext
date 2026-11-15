@@ -1,0 +1,7 @@
+{
+  "name": "sl-info",
+  "description": "SUNLIGHT — справочная таблица о шаблоне (статичный контент)",
+  "type": "visualization",
+  "version": "1.0.0",
+  "author": "SUNLIGHT template"
+}

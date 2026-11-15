@@ -5,6 +5,8 @@
   "userDirectory": "DOMAIN",
   "userId": "svc_dashgen",
   "rejectUnauthorized": false,
+  "reload": "auto",
+  "reloadTimeoutMin": 30,
   "ai": {
     "baseUrl": "https://api.z.ai/api/paas/v4",
     "model": "glm-4.6",

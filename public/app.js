@@ -335,7 +335,7 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   btn.disabled = true;
   progressStart(logEl, 'Готовлю профиль и отправляю модели…');
   try {
-    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc }, text => {
+    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc, layout: $('#dg-ai-layout').value || undefined }, text => {
       progressPhase('Модель работает…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;
     });
@@ -807,6 +807,13 @@ $('#dg-btn-patch').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
+// Режим сборки: показать поля attach (цель и «без перезагрузки»)
+$('#dg-build-mode').addEventListener('change', e => {
+  const attach = e.target.value === 'attach';
+  $('#dg-build-target').classList.toggle('dg-hidden', !attach);
+  $('#dg-build-noreload-row').classList.toggle('dg-hidden', !attach);
+});
+
 // ── сборка (SSE, живой прогресс и самоисправление) ──
 $('#dg-btn-build').addEventListener('click', async () => {
   if (!state.spec) return;
@@ -817,6 +824,13 @@ $('#dg-btn-build').addEventListener('click', async () => {
   progressStart(logEl, 'Подключаюсь к Qlik и собираю приложение…');
   const tick = setInterval(() => { timer.textContent = 'идёт сборка… ' + Math.round((Date.now() - t0) / 1000) + ' с'; }, 500);
   const payload = state.specName ? { specName: state.specName } : { spec: state.spec };
+  // Режим сборки: новое приложение или правка существующего (attach — без удаления)
+  payload.mode = $('#dg-build-mode').value;
+  if (payload.mode === 'attach') {
+    payload.target = $('#dg-build-target').value.trim();
+    if (!payload.target) { clearInterval(tick); progressStop(false); timer.textContent = ''; logEl.classList.add('is-err'); logEl.textContent += '\nУкажите ID или имя приложения для подключения.'; return; }
+    if ($('#dg-build-noreload').checked) payload.noReload = true;
+  }
   try {
     const r = await apiStream('/api/build', payload, text => {
       if (/Самоисправление/.test(text)) progressPhase('Сборка упала — модель исправляет spec…');
@@ -1129,7 +1143,8 @@ $('#dg-btn-gen-share').addEventListener('click', async () => {
     const r = await apiStream('/api/generate-spec', {
       profile: state.safeProfile,
       description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
-      excelLib
+      excelLib,
+      layout: $('#dg-ai-layout').value || undefined
     }, text => {
       progressPhase('Модель формирует spec (реальные данные)…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;

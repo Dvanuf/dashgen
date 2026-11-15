@@ -1,0 +1,8 @@
+{
+  "name": "sl-theme-light",
+  "type": "visualization",
+  "description": "SUNLIGHT Light — инъекция темы (CSS + шрифты base64)",
+  "version": "1.0.0",
+  "author": "SUNLIGHT",
+  "icon": "extension"
+}
