@@ -55,6 +55,16 @@ async function listStreams(cfg) {
   return streams.map(s => ({ id: s.id, name: s.name }));
 }
 
+// Список приложений (для выбора цели attach): [{id, name, published, stream, modifiedDate}]
+async function listApps(cfg) {
+  const apps = await request(cfg, 'GET', '/qrs/app/full');
+  return (apps || []).map(a => ({
+    id: a.id, name: a.name, published: !!a.published,
+    stream: a.stream ? { id: a.stream.id, name: a.stream.name } : null,
+    modifiedDate: a.modifiedDate
+  }));
+}
+
 // Приложение по имени: {id, name, published, stream} | null
 async function findAppByName(cfg, appName) {
   const filter = encodeURIComponent(`name eq '${appName.replace(/'/g, "''")}'`);
@@ -183,4 +193,4 @@ function uploadExtension(cfg, extName, qextJson, zipBuffer) {
   });
 }
 
-module.exports = { request, listStreams, findAppByName, publishApp, createReloadTask, startTask, waitForTask, deleteReloadTask, listExtensions, uploadExtension };
+module.exports = { request, listStreams, listApps, findAppByName, publishApp, createReloadTask, startTask, waitForTask, deleteReloadTask, listExtensions, uploadExtension };

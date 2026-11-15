@@ -585,8 +585,14 @@ async function streamBuild(req, res, url) {
 
     const builder = require('./src/builder');
     const { verify, printReport } = require('./src/verify');
+    // Режим: create (новое) или attach (правка существующего без удаления)
+    const buildOpts = {
+      mode: body.mode === 'attach' ? 'attach' : 'create',
+      target: body.target ? String(body.target) : undefined,
+      noReload: !!body.noReload
+    };
     try {
-      const buildResult = await builder.build(spec, CFG, log);
+      const buildResult = await builder.build(spec, CFG, log, buildOpts);
       const verifyReport = await verify(CFG, buildResult.appId, spec, buildResult);
       printReport(verifyReport, log);
       emit({ type: 'done', build: buildResult, verify: verifyReport });
@@ -605,7 +611,7 @@ async function streamBuild(req, res, url) {
             const fixed = await fixBuild({ spec: working, diagnosis, aiCfg, log });
             working = fixed.spec;
             log('Модель исправила spec за ' + fixed.attempts + ' попыт(и) — пересобираю…');
-            const buildResult = await builder.build(working, CFG, log);
+            const buildResult = await builder.build(working, CFG, log, buildOpts);
             const verifyReport = await verify(CFG, buildResult.appId, working, buildResult);
             printReport(verifyReport, l => log(String(l)));
             log('ИТОГ: сборка после самоисправления прошла успешно');

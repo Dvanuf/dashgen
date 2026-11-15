@@ -63,6 +63,44 @@ const mea = id => ({ qLibraryId: id, qDef: {} });
 const dim = (field, label) => ({ qDef: { qFieldDefs: [field], qFieldLabels: [label] } });
 
 // ── Мастер-элементы ──
+// Список мастер-элементов через session-объект (Doc.GetDimensions в схеме enigma.js нет).
+// kind: 'DimensionList' | 'MeasureList' → [{qId, title}]
+async function listMasterRefs(app, kind) {
+  const isDim = kind === 'DimensionList';
+  const def = isDim
+    ? { qInfo: { qType: 'DimensionList' }, qDimensionListDef: { qType: 'dimension', qData: { title: '/qMetaDef/title' }, qMeta: '', qAppObjectListDef: { qType: 'dimension' } } }
+    : { qInfo: { qType: 'MeasureList' }, qMeasureListDef: { qType: 'measure', qData: { title: '/qMetaDef/title' }, qMeta: '', qAppObjectListDef: { qType: 'measure' } } };
+  const so = await app.createSessionObject(def);
+  const lo = await so.getLayout();
+  const list = isDim ? lo.qDimensionList : lo.qMeasureList;
+  const items = (list && list.qItems ? list.qItems : [])
+    .map(i => ({ qId: i.qInfo && i.qInfo.qId, title: (i.qMeta && i.qMeta.title) || '' }));
+  try { await so.destroySessionObject(); } catch (_) { /* session-only */ }
+  return items;
+}
+
+// resolveMasters(app, spec, log) → {dimMap, meaMap}: мастер-элементы переиспользуются
+// по названию (attach-режим правок — без дублей), создаются только отсутствующие.
+async function resolveMasters(app, spec, log = () => {}) {
+  const dimRefs = await listMasterRefs(app, 'DimensionList');
+  const meaRefs = await listMasterRefs(app, 'MeasureList');
+  const dimMap = {}, meaMap = {};
+  let reused = 0;
+  for (const d of spec.dimensions || []) {
+    const ex = dimRefs.find(x => x.title === d.title);
+    if (ex) { dimMap[d.id] = ex.qId; reused++; continue; }
+    dimMap[d.id] = await createMasterDimension(app, d);
+  }
+  for (const m of spec.measures || []) {
+    const ex = meaRefs.find(x => x.title === m.title);
+    if (ex) { meaMap[m.id] = ex.qId; reused++; continue; }
+    meaMap[m.id] = await createMasterMeasure(app, m);
+  }
+  log('Мастер-элементы: измерений ' + Object.keys(dimMap).length + ', мер ' + Object.keys(meaMap).length +
+    ' (переиспользовано: ' + reused + ')');
+  return { dimMap, meaMap };
+}
+
 async function createMasterDimension(app, d) {
   const obj = await app.createDimension({
     qInfo: { qType: 'dimension' },
@@ -173,4 +211,4 @@ async function createObjectBySpec(app, ospec, dimMap, meaMap) {
   return { id: obj.id };
 }
 
-module.exports = { createMasterDimension, createMasterMeasure, createObjectBySpec };
+module.exports = { createMasterDimension, createMasterMeasure, createObjectBySpec, resolveMasters, listMasterRefs };

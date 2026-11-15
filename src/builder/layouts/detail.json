@@ -2,25 +2,168 @@
   "id": "detail",
   "title": "Детализация",
   "description": "Аналитический лист: фильтры, полоса KPI, два больших графика по периодам, внизу — таблица и топ по измерению",
-  "grid": { "cols": 24, "rows": 12 },
+  "grid": {
+    "cols": 24,
+    "rows": 12
+  },
   "zones": [
-    { "id": "filters", "title": "Фильтры", "row": 0, "rowspan": 1 },
-    { "id": "kpi", "title": "Ключевые показатели", "row": 1, "rowspan": 2 },
-    { "id": "charts", "title": "Графики", "row": 3, "rowspan": 6 },
-    { "id": "detail", "title": "Детализация", "row": 9, "rowspan": 3 }
+    {
+      "id": "filters",
+      "title": "Фильтры",
+      "row": 0,
+      "rowspan": 1
+    },
+    {
+      "id": "kpi",
+      "title": "Ключевые показатели",
+      "row": 1,
+      "rowspan": 2
+    },
+    {
+      "id": "charts",
+      "title": "Графики",
+      "row": 3,
+      "rowspan": 6
+    },
+    {
+      "id": "detail",
+      "title": "Детализация",
+      "row": 9,
+      "rowspan": 3
+    }
   ],
   "slots": [
-    { "id": "flt-1", "zone": "filters", "type": "listbox", "col": 0, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 1 — поле измерения" },
-    { "id": "flt-2", "zone": "filters", "type": "listbox", "col": 6, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 2 — поле измерения" },
-    { "id": "flt-3", "zone": "filters", "type": "listbox", "col": 12, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 3 — поле измерения" },
-    { "id": "flt-4", "zone": "filters", "type": "listbox", "col": 18, "row": 0, "colspan": 6, "rowspan": 1, "role": "filter", "roleTitle": "фильтр 4 — поле измерения" },
-    { "id": "kpi-1", "zone": "kpi", "type": "kpi", "col": 0, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "показатель 1 (количество единиц)" },
-    { "id": "kpi-2", "zone": "kpi", "type": "kpi", "col": 6, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "показатель 2 (маржа / прибыль)" },
-    { "id": "kpi-3", "zone": "kpi", "type": "kpi", "col": 12, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "показатель 3 (доля, процент)" },
-    { "id": "kpi-4", "zone": "kpi", "type": "kpi", "col": 18, "row": 1, "colspan": 6, "rowspan": 2, "role": "kpi", "roleTitle": "показатель 4 (выполнение плана)" },
-    { "id": "bar-trend", "zone": "charts", "type": "barchart", "col": 0, "row": 3, "colspan": 12, "rowspan": 6, "role": "trend", "roleTitle": "разрез по периодам: измерение-период + 1–2 меры" },
-    { "id": "combo-margin", "zone": "charts", "type": "combochart", "col": 12, "row": 3, "colspan": 12, "rowspan": 6, "role": "trend", "roleTitle": "динамика по периодам: измерение-период + 2 меры (например себестоимость и маржа)" },
-    { "id": "tab-detail", "zone": "detail", "type": "table", "col": 0, "row": 9, "colspan": 12, "rowspan": 3, "role": "detailTable", "roleTitle": "детализация: 1–3 измерения + 2–4 меры" },
-    { "id": "bar-top", "zone": "detail", "type": "barchart", "col": 12, "row": 9, "colspan": 12, "rowspan": 3, "role": "top", "roleTitle": "топ по измерению: измерение + мера" }
+    {
+      "id": "flt-1",
+      "zone": "filters",
+      "type": "listbox",
+      "col": 0,
+      "row": 0,
+      "colspan": 6,
+      "rowspan": 1,
+      "role": "filter",
+      "roleTitle": "фильтр 1 — поле измерения"
+    },
+    {
+      "id": "flt-2",
+      "zone": "filters",
+      "type": "listbox",
+      "col": 6,
+      "row": 0,
+      "colspan": 6,
+      "rowspan": 1,
+      "role": "filter",
+      "roleTitle": "фильтр 2 — поле измерения"
+    },
+    {
+      "id": "flt-3",
+      "zone": "filters",
+      "type": "listbox",
+      "col": 12,
+      "row": 0,
+      "colspan": 6,
+      "rowspan": 1,
+      "role": "filter",
+      "roleTitle": "фильтр 3 — поле измерения"
+    },
+    {
+      "id": "flt-4",
+      "zone": "filters",
+      "type": "listbox",
+      "col": 18,
+      "row": 0,
+      "colspan": 6,
+      "rowspan": 1,
+      "role": "filter",
+      "roleTitle": "фильтр 4 — поле измерения"
+    },
+    {
+      "id": "kpi-1",
+      "zone": "kpi",
+      "type": "kpi",
+      "col": 0,
+      "row": 1,
+      "colspan": 6,
+      "rowspan": 2,
+      "role": "kpi",
+      "roleTitle": "показатель 1 (количество единиц)"
+    },
+    {
+      "id": "kpi-2",
+      "zone": "kpi",
+      "type": "kpi",
+      "col": 6,
+      "row": 1,
+      "colspan": 6,
+      "rowspan": 2,
+      "role": "kpi",
+      "roleTitle": "показатель 2 (маржа / прибыль)"
+    },
+    {
+      "id": "kpi-3",
+      "zone": "kpi",
+      "type": "kpi",
+      "col": 12,
+      "row": 1,
+      "colspan": 6,
+      "rowspan": 2,
+      "role": "kpi",
+      "roleTitle": "показатель 3 (доля, процент)"
+    },
+    {
+      "id": "kpi-4",
+      "zone": "kpi",
+      "type": "kpi",
+      "col": 18,
+      "row": 1,
+      "colspan": 6,
+      "rowspan": 2,
+      "role": "kpi",
+      "roleTitle": "показатель 4 (выполнение плана)"
+    },
+    {
+      "id": "bar-trend",
+      "zone": "charts",
+      "type": "barchart",
+      "col": 0,
+      "row": 3,
+      "colspan": 12,
+      "rowspan": 6,
+      "role": "trend",
+      "roleTitle": "разрез по периодам: измерение-период + 1–2 меры"
+    },
+    {
+      "id": "combo-margin",
+      "zone": "charts",
+      "type": "linechart",
+      "col": 12,
+      "row": 3,
+      "colspan": 12,
+      "rowspan": 6,
+      "role": "trend",
+      "roleTitle": "динамика по периодам: измерение-период + 2 меры (например себестоимость и маржа)"
+    },
+    {
+      "id": "tab-detail",
+      "zone": "detail",
+      "type": "table",
+      "col": 0,
+      "row": 9,
+      "colspan": 12,
+      "rowspan": 3,
+      "role": "detailTable",
+      "roleTitle": "детализация: 1–3 измерения + 2–4 меры"
+    },
+    {
+      "id": "bar-top",
+      "zone": "detail",
+      "type": "barchart",
+      "col": 12,
+      "row": 9,
+      "colspan": 12,
+      "rowspan": 3,
+      "role": "top",
+      "roleTitle": "топ по измерению: измерение + мера"
+    }
   ]
 }

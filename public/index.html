@@ -225,6 +225,15 @@
         </ol>
         <p class="dg-sub">Черновик в личной области Work, виден автору. Повторная сборка заменяет приложение с тем же именем.</p>
         <div class="dg-rowbtn">
+          <span class="dg-note">Режим:</span>
+          <select class="dg-input" id="dg-build-mode" style="flex:none;width:auto;">
+            <option value="create">Создать новое приложение</option>
+            <option value="attach">Подключиться к существующему (правки без удаления)</option>
+          </select>
+          <input class="dg-input dg-hidden" id="dg-build-target" type="text" placeholder="ID или имя приложения" style="flex:none;width:220px;">
+          <label class="dg-note dg-hidden" id="dg-build-noreload-row"><input type="checkbox" id="dg-build-noreload"> без перезагрузки данных (только оформление)</label>
+        </div>
+        <div class="dg-rowbtn">
           <span class="dg-note">Spec:</span><b id="dg-build-spec-name">—</b>
           <button class="dg-btn dg-btn--p" id="dg-btn-build" type="button"><i data-lucide="layers" aria-hidden="true"></i>Собрать черновик в Qlik</button>
           <span class="dg-note" id="dg-build-timer"></span>

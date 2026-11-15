@@ -1,10 +1,18 @@
 // Сборка приложения Qlik из spec.json: приложение → загрузка → мастер-элементы → объекты → листы.
+// Два режима:
+//   create (по умолчанию) — новое приложение, старое с тем же именем удаляется;
+//   attach — подключение к существующему дашборду БЕЗ удаления: обновляются только
+//            листы/объекты из спеки (reconcile), остальные листы и ручные правки живут.
 const { withSession, deleteAppsByName } = require('../engine');
 const { generateScript } = require('../qvs-generator');
 const qrs = require('../qrs');
 const objects = require('./objects');
 const archetypes = require('./archetypes');
 const T = require('./templates');
+
+const VIZ_TYPES = ['barchart', 'linechart', 'combochart', 'piechart', 'kpi', 'table', 'pivot-table',
+  'gauge', 'text', 'filterpane', 'listbox', 'scatterplot', 'treemap', 'map', 'container',
+  'sl-logo', 'sl-info', 'sl-theme-light'];
 
 // Диагноз после неудачного reload: поля, которые нужны мерам/измерениям,
 // против полей, реально появившихся в модели. Текст уходит в ИИ на самоисправление.
@@ -17,7 +25,7 @@ async function diagnoseReloadFailure(app, spec) {
   const needed = new Set();
   const QLIK_WORDS = new Set(['sum', 'count', 'distinct', 'avg', 'min', 'max', 'only', 'if', 'aggr', 'num', 'date', 'month', 'year', 'quarter', 'week', 'day', 'floor', 'ceil', 'round', 'and', 'or', 'not', 'total']);
   const addFromFormula = text => {
-    const clean = String(text || '').replace(/'[^']*'|"[^"]*"/g, "''");
+    const clean = String(text || '').replace(/'[^']*'|"[^']*"/g, "''");
     for (const b of clean.match(/\[([^\]]+)\]/g) || []) needed.add(b.slice(1, -1).toLowerCase());
     for (const id of clean.match(/[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*/g) || []) {
       const lid = id.toLowerCase();
@@ -35,54 +43,106 @@ async function diagnoseReloadFailure(app, spec) {
   return 'Загрузка не прошла без расхождений по полям — вероятно, проблема в типе данных или синтаксисе скрипта.';
 }
 
-// build(spec, cfg, log) → { appId, appName, objects: [{id, type, title}], sheets: n }
+// Перезагрузка: doReload, а при отказе (стандартный режим движка) — одноразовая QRS-задача.
+// Скрипт должен быть уже установлен. Возвращает свежий хэндл приложения.
+async function reloadApp(app, global, appId, cfg, spec, log) {
+  let reloaded = false;
+  if ((cfg.reload || 'auto') !== 'qrs') reloaded = await app.doReload(0, false, false);
+  if (reloaded) { log('Данные загружены'); return app; }
+  log('doReload недоступен (стандартный режим движка) — перезагрузка через QRS-задачу…');
+  await app.doSave(); // задача читает скрипт из сохранённого приложения
+  const taskId = await qrs.createReloadTask(cfg, appId, 'Dashgen reload — ' + spec.appName);
+  let res;
+  try {
+    await qrs.startTask(cfg, taskId);
+    res = await qrs.waitForTask(cfg, taskId, { timeoutMin: cfg.reloadTimeoutMin || 30 });
+  } finally {
+    await qrs.deleteReloadTask(cfg, taskId); // задача одноразовая
+  }
+  if (!res.ok) {
+    const tail = (res.messages || []).filter(Boolean).slice(-4).join('\n');
+    const diagnosis = tail || await diagnoseReloadFailure(app, spec);
+    const err = new Error('QRS-перезагрузка не удалась (status=' + res.status + '): ' + diagnosis.split('\n')[0]);
+    err.qlikReloadFailure = true;
+    err.diagnosis = diagnosis;
+    throw err;
+  }
+  log('Данные загружены (QRS-задача)');
+  return global.openDoc(appId); // свежий хэндл после внешней перезагрузки
+}
+
+// attach: id или имя приложения → id (имя ищется через QRS)
+async function resolveTarget(cfg, target) {
+  if (!target) throw new Error('attach: укажите приложение — --app <id|имя>');
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) return target;
+  const found = await qrs.findAppByName(cfg, target);
+  if (!found) throw new Error('приложение с именем «' + target + '» не найдено (QRS)');
+  return found.id;
+}
+
+// attach: синхронизация листов по спеке — листы с целевыми названиями удаляются
+// (создадутся заново), остальные листы и ручные правки не трогаются; сироты чистятся.
+// ВАЖНО: Dashgen создаёт объекты КОРНЕВЫМИ (не детьми листа) — клиент рендерит их по
+// cells[].name, а getChildInfos листа пуст. «Прикреплённые» = имена из cells всех листов.
+async function reconcileSheets(app, spec, log) {
+  const titles = new Set(spec.sheets.map(s => s.title));
+  const existing = await app.getObjects({ qTypes: ['sheet'], qData: { title: '/qMetaDef/title' } });
+  let removed = 0;
+  for (const s of existing) {
+    const o = await app.getObject(s.qInfo.qId);
+    const p = await o.getProperties();
+    const title = (p.qMetaDef && p.qMetaDef.title) || p.title || '';
+    if (titles.has(title)) { await app.destroyObject(s.qInfo.qId); removed++; }
+  }
+  if (removed) log('Reconcile: удалено листов с целевыми названиями: ' + removed);
+
+  const attached = new Set();
+  for (const s of await app.getObjects({ qTypes: ['sheet'], qData: {} })) {
+    const sh = await app.getObject(s.qInfo.qId);
+    const lo = await sh.getLayout();
+    (lo.cells || []).forEach(c => attached.add(c.name));
+  }
+  const all = await app.getObjects({ qTypes: VIZ_TYPES, qData: {} });
+  let orphans = 0;
+  for (const o of all) {
+    if (attached.has(o.qInfo.qId)) continue;
+    try { await app.destroyObject(o.qInfo.qId); orphans++; } catch (_) { /* не критично */ }
+  }
+  if (orphans) log('Reconcile: удалено осиротевших объектов прошлых сборок: ' + orphans);
+}
+
+// build(spec, cfg, log, opts) → { appId, appName, objects: [{id, type, title}], sheets: n }
+// opts: { mode: 'create'|'attach', target: <id|имя> (attach), noReload: true }
 // log — куда пишется журнал сборки (консоль CLI или интерфейс)
-async function build(spec, cfg, log = console.log) {
+async function build(spec, cfg, log = console.log, opts = {}) {
+  const mode = opts.mode === 'attach' ? 'attach' : 'create';
   // Базовый макет: spec.design.layout + design.fill → готовые sheets с позициями слотов
   if (spec.design && spec.design.layout) spec = archetypes.applyLayout(spec, log);
+  if (!Array.isArray(spec.sheets) || !spec.sheets.length) throw new Error('в spec нет листов (sheets или design.layout)');
   return withSession(cfg, async global => {
-    const removed = await deleteAppsByName(global, spec.appName);
-    if (removed.length) log('Удалено старых приложений с тем же именем: ' + removed.length);
-
-    const created = await global.createApp(spec.appName);
-    let app = await global.openDoc(created.qAppId);
-    log('Приложение создано: ' + created.qAppId);
-
-    await app.setScript(generateScript(spec));
-
-    // Перезагрузка: сначала обычный doReload; на серверах со стандартным режимом
-    // движка он мгновенно возвращает false — тогда QRS-задача (cfg.reload: 'qrs' — сразу задача).
-    let reloaded = false;
-    if ((cfg.reload || 'auto') !== 'qrs') reloaded = await app.doReload(0, false, false);
-    if (!reloaded) {
-      log('doReload недоступен (стандартный режим движка) — перезагрузка через QRS-задачу…');
-      await app.doSave(); // задача читает скрипт из сохранённого приложения
-      const taskId = await qrs.createReloadTask(cfg, created.qAppId, 'Dashgen reload — ' + spec.appName);
-      let res;
-      try {
-        await qrs.startTask(cfg, taskId);
-        res = await qrs.waitForTask(cfg, taskId, { timeoutMin: cfg.reloadTimeoutMin || 30 });
-      } finally {
-        await qrs.deleteReloadTask(cfg, taskId); // задача одноразовая
-      }
-      if (!res.ok) {
-        const tail = (res.messages || []).filter(Boolean).slice(-4).join('\n');
-        const diagnosis = tail || await diagnoseReloadFailure(app, spec);
-        const err = new Error('QRS-перезагрузка не удалась (status=' + res.status + '): ' + diagnosis.split('\n')[0]);
-        err.qlikReloadFailure = true;
-        err.diagnosis = diagnosis;
-        throw err;
-      }
-      log('Данные загружены (QRS-задача)');
-      app = await global.openDoc(created.qAppId); // свежий хэндл после внешней перезагрузки
+    let appId, app;
+    if (mode === 'attach') {
+      appId = await resolveTarget(cfg, opts.target);
+      app = await global.openDoc(appId);
+      log('Подключено к существующему приложению: ' + appId);
+      await reconcileSheets(app, spec, log);
     } else {
-      log('Данные загружены');
+      const removed = await deleteAppsByName(global, spec.appName);
+      if (removed.length) log('Удалено старых приложений с тем же именем: ' + removed.length);
+      const created = await global.createApp(spec.appName);
+      appId = created.qAppId;
+      app = await global.openDoc(appId);
+      log('Приложение создано: ' + appId);
     }
 
-    const dimMap = {}, meaMap = {};
-    for (const d of spec.dimensions || []) dimMap[d.id] = await objects.createMasterDimension(app, d);
-    for (const m of spec.measures || []) meaMap[m.id] = await objects.createMasterMeasure(app, m);
-    log('Мастер-элементы: измерений ' + Object.keys(dimMap).length + ', мер ' + Object.keys(meaMap).length);
+    if (!opts.noReload) {
+      await app.setScript(generateScript(spec));
+      app = await reloadApp(app, global, appId, cfg, spec, log);
+    } else {
+      log('Перезагрузка пропущена (no-reload): правим оформление на текущих данных');
+    }
+
+    const { dimMap, meaMap } = await objects.resolveMasters(app, spec, log);
 
     const createdObjects = [];
     for (let si = 0; si < spec.sheets.length; si++) {
@@ -106,9 +166,10 @@ async function build(spec, cfg, log = console.log) {
     }
 
     await app.doSave();
-    log('Готово. Приложение «' + spec.appName + '» (ID ' + created.qAppId + ') в Hub → Work.');
-    return { appId: created.qAppId, appName: spec.appName, objects: createdObjects, sheets: spec.sheets.length };
+    const name = mode === 'attach' ? (opts.target || spec.appName) : spec.appName;
+    log('Готово. Приложение «' + name + '» (ID ' + appId + ') в Hub → Work.');
+    return { appId, appName: name, objects: createdObjects, sheets: spec.sheets.length, mode };
   });
 }
 
-module.exports = { build };
+module.exports = { build, reconcileSheets };
