@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const T = require('./templates');
+const brand = require('./brand');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates');
 
@@ -39,7 +40,7 @@ function buildHypercube(ospec, dimMap, meaMap) {
 
 // Создание по снятому шаблону: свойства клиента (цвета, оси, легенда) — из слепка,
 // данные и заголовок — из spec. Если шаблона нет — ошибка с подсказкой.
-async function createFromTemplate(app, ospec, dimMap, meaMap) {
+async function createFromTemplate(app, ospec, dimMap, meaMap, isSunlight) {
   const template = loadTemplate(ospec.type);
   if (!template) {
     throw new Error(`для типа «${ospec.type}» нет снятого шаблона templates/${ospec.type}.json — прогоните scripts/extract-templates.js`);
@@ -50,7 +51,8 @@ async function createFromTemplate(app, ospec, dimMap, meaMap) {
     visualization: ospec.type,
     showTitles: true,
     title: ospec.title || '',
-    qHyperCubeDef: buildHypercube(ospec, dimMap, meaMap)
+    qHyperCubeDef: buildHypercube(ospec, dimMap, meaMap),
+    ...(isSunlight ? { color: brand.brandColor() } : {})
   });
 }
 
@@ -121,20 +123,22 @@ async function createMasterMeasure(app, m) {
 }
 
 // ── Визуализации ──
-async function createKpi(app, ospec, meaMap) {
+async function createKpi(app, ospec, meaMap, isSunlight) {
   const id = ref(meaMap, ospec.measure, 'меру');
   return app.createObject({
     qInfo: { qType: 'kpi' }, visualization: 'kpi', showTitles: false, title: ospec.title || '',
     qHyperCubeDef: {
       qInitialDataFetch: [{ qTop: 0, qLeft: 0, qWidth: 1, qHeight: 1 }],
       qMeasures: [mea(id)]
-    }
+    },
+    ...(isSunlight ? { color: brand.brandColor() } : {})
   });
 }
 
-async function createLine(app, ospec, dimMap, meaMap) {
+async function createLine(app, ospec, dimMap, meaMap, isSunlight) {
   const dimId = ref(dimMap, ospec.dimension, 'измерение');
   return app.createObject(T.withDefaults(T.LINE_DEFAULTS, {
+    ...(isSunlight ? { color: brand.brandColor() } : {}),
     qInfo: { qType: 'linechart' }, visualization: 'linechart', showTitles: true, title: ospec.title || '',
     qHyperCubeDef: {
       qDimensions: [{ qLibraryId: dimId, qDef: { qSortCriterias: [{ qSortByNumeric: 1 }] } }],
@@ -145,9 +149,10 @@ async function createLine(app, ospec, dimMap, meaMap) {
   }));
 }
 
-async function createBar(app, ospec, dimMap, meaMap) {
+async function createBar(app, ospec, dimMap, meaMap, isSunlight) {
   const dimId = ref(dimMap, ospec.dimension, 'измерение');
   return app.createObject(T.withDefaults(T.BAR_DEFAULTS, {
+    ...(isSunlight ? { color: brand.brandColor() } : {}),
     qInfo: { qType: 'barchart' }, visualization: 'barchart', showTitles: true, title: ospec.title || '',
     qHyperCubeDef: {
       qDimensions: [{ qLibraryId: dimId, qDef: {} }],
@@ -189,13 +194,13 @@ async function createListbox(app, ospec) {
   });
 }
 
-// createObjectBySpec(app, ospec, dimMap, meaMap) → { id }
-async function createObjectBySpec(app, ospec, dimMap, meaMap) {
+// createObjectBySpec(app, ospec, dimMap, meaMap, isSunlight) → { id }
+async function createObjectBySpec(app, ospec, dimMap, meaMap, isSunlight) {
   let obj;
   switch (ospec.type) {
-    case 'kpi': obj = await createKpi(app, ospec, meaMap); break;
-    case 'linechart': obj = await createLine(app, ospec, dimMap, meaMap); break;
-    case 'barchart': obj = await createBar(app, ospec, dimMap, meaMap); break;
+    case 'kpi': obj = await createKpi(app, ospec, meaMap, isSunlight); break;
+    case 'linechart': obj = await createLine(app, ospec, dimMap, meaMap, isSunlight); break;
+    case 'barchart': obj = await createBar(app, ospec, dimMap, meaMap, isSunlight); break;
     case 'table': obj = await createTable(app, ospec, dimMap, meaMap); break;
     case 'listbox': obj = await createListbox(app, ospec); break;
     // Типы из снятых шаблонов клиента (templates/<тип>.json):
@@ -205,7 +210,7 @@ async function createObjectBySpec(app, ospec, dimMap, meaMap) {
     case 'treemap':
     case 'gauge':
     case 'pivot-table':
-      obj = await createFromTemplate(app, ospec, dimMap, meaMap); break;
+      obj = await createFromTemplate(app, ospec, dimMap, meaMap, isSunlight); break;
     default: throw new Error('Неизвестный тип объекта: ' + ospec.type + ' (в spec v1 разрешены: kpi, linechart, barchart, table, listbox, piechart, scatterplot, combochart, treemap, gauge, pivot-table)');
   }
   return { id: obj.id };

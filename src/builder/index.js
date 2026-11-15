@@ -8,6 +8,7 @@ const { generateScript } = require('../qvs-generator');
 const qrs = require('../qrs');
 const objects = require('./objects');
 const archetypes = require('./archetypes');
+const brand = require('./brand');
 const T = require('./templates');
 
 const VIZ_TYPES = ['barchart', 'linechart', 'combochart', 'piechart', 'kpi', 'table', 'pivot-table',
@@ -116,6 +117,9 @@ async function reconcileSheets(app, spec, log) {
 // log — куда пишется журнал сборки (консоль CLI или интерфейс)
 async function build(spec, cfg, log = console.log, opts = {}) {
   const mode = opts.mode === 'attach' ? 'attach' : 'create';
+  // Бренд-пак: расширения оформления загружаются через QRS идемпотентно (до сборки)
+  const isSunlight = !!(spec.design && spec.design.brand === 'sunlight');
+  if (isSunlight) await brand.ensureExtensions(cfg, log);
   // Базовый макет: spec.design.layout + design.fill → готовые sheets с позициями слотов
   if (spec.design && spec.design.layout) spec = archetypes.applyLayout(spec, log);
   if (!Array.isArray(spec.sheets) || !spec.sheets.length) throw new Error('в spec нет листов (sheets или design.layout)');
@@ -144,15 +148,25 @@ async function build(spec, cfg, log = console.log, opts = {}) {
 
     const { dimMap, meaMap } = await objects.resolveMasters(app, spec, log);
 
+    // Инжектор light-темы бренда: корневой объект, ячейка в правом нижнем углу последнего листа
+    let injectorId = null;
+    if (isSunlight) {
+      const inj = await app.createObject(brand.themeInjectorProps());
+      injectorId = inj.id;
+    }
+
     const createdObjects = [];
     for (let si = 0; si < spec.sheets.length; si++) {
       const sheet = spec.sheets[si];
       const cells = [];
       for (const ospec of sheet.objects) {
-        const { id } = await objects.createObjectBySpec(app, ospec, dimMap, meaMap);
+        const { id } = await objects.createObjectBySpec(app, ospec, dimMap, meaMap, isSunlight);
         createdObjects.push({ id, type: ospec.type, title: ospec.title || '' });
         const [dc, dr] = T.DEFAULT_SIZE[ospec.type] || [4, 3];
         cells.push(T.cell(id, ospec.type, ospec.col, ospec.row, ospec.colspan || dc, ospec.rowspan || dr));
+      }
+      if (isSunlight && injectorId && si === spec.sheets.length - 1) {
+        cells.push(T.cell(injectorId, 'sl-theme-light', T.GRID_COLS - 1, T.GRID_ROWS - 1, 1, 1));
       }
       await app.createObject({
         qInfo: { qType: 'sheet' },

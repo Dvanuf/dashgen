@@ -1,0 +1,8 @@
+{
+  "name": "sl-logo",
+  "type": "visualization",
+  "description": "Логотип SUNLIGHT",
+  "version": "1.0.0",
+  "author": "SUNLIGHT",
+  "icon": "extension"
+}
