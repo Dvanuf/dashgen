@@ -9,6 +9,14 @@ const crypto = require('crypto');
 
 const PORT = 4748;
 const ROOT = __dirname;
+
+// Быстрая проверка хоста по DNS: мёртвая SMB-шара блокирует existsSync/readdir
+// на минуты — перед касанием шары всегда смотрим, резолвится ли сервер.
+const dnsPromises = require('dns').promises;
+const hostReachable = async host => {
+  try { await dnsPromises.lookup(host, { family: 4 }); return true; }
+  catch (_) { return false; }
+};
 // В собранном .app код внутри asar (только чтение) — записываемое в DASHGEN_DATA_DIR
 const DATA = process.env.DASHGEN_DATA_DIR || ROOT;
 const PUBLIC = path.join(ROOT, 'public');
