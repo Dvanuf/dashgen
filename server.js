@@ -383,6 +383,30 @@ const api = {
     return [200, { present: true, source: 'file', file: fp }];
   },
 
+  // ── фиксация правок из Qlik-клиента: фактическое состояние листов → spec (fixed:true) ──
+  'POST /api/sync': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!CFG) return [500, { error: 'config.json не найден' }];
+    const app = String(body.app || '').trim();
+    if (!app) return [400, { error: 'Укажите приложение — ID или имя' }];
+    const qrs = require('./src/qrs');
+    const resolved = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app)
+      ? app : (await qrs.findAppByName(CFG, app) || {}).id;
+    if (!resolved) return [400, { error: 'приложение не найдено: ' + app }];
+    let spec = null, specName = null, fp = null;
+    if (body.specName) {
+      specName = String(body.specName);
+      fp = specPathByName(specName).fp;
+      spec = loadSpec(fp);
+    } else if (body.spec && typeof body.spec === 'object') {
+      spec = body.spec;
+    } else return [400, { error: 'Нужен spec: откройте или сгенерируйте его на шаге «Спецификация»' }];
+    const { syncBack } = require('./src/sync-back');
+    const { spec: fixedSpec, stats } = await syncBack(CFG, resolved, spec, () => {});
+    if (specName && fp) fs.writeFileSync(fp, JSON.stringify(fixedSpec, null, 2));
+    return [200, { spec: fixedSpec, stats, saved: !!specName, appId: resolved }];
+  },
+
   // ── платформа/модель ИИ ──
   'GET /api/ai-presets': () => {
     const presets = [

@@ -363,6 +363,33 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
 });
 
+// ── фиксация правок из Qlik-клиента: состояние листов → spec (fixed:true) ──
+$('#dg-btn-sync').addEventListener('click', async () => {
+  const btn = $('#dg-btn-sync'), logEl = $('#dg-sync-log');
+  const app = $('#dg-sync-app').value.trim();
+  btn.disabled = true;
+  logEl.classList.remove('dg-hidden', 'is-err');
+  logEl.textContent = 'Читаю листы приложения…';
+  try {
+    const payload = state.specName ? { specName: state.specName } : { spec: state.spec };
+    payload.app = app;
+    const r = await api('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    state.spec = r.spec;
+    state.specHash = null;
+    state.specChecked = true;
+    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
+    logEl.textContent += '\nЗафиксировано: листов ' + r.stats.sheets + ', объектов ' + r.stats.objects +
+      (r.saved ? ' — spec.json перезаписан' : ' — spec в памяти, сохраните его на шаге «Спецификация»');
+    logEl.classList.add('is-ok');
+    setStatus('dg-st-spec', '✓');
+  } catch (e) {
+    logEl.textContent += '\nОШИБКА: ' + e.message;
+    logEl.classList.add('is-err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ── макет: редактор раскладки (drag + resize, переезд соседей вниз — как в Sense) ──
 const DG_PALETTE = ['#2e6da8', '#5a9fd8', '#8fb8dc', '#e0a63e', '#c04343', '#1f8f5f', '#97a3b8', '#73593c'];
 const SHEET_COLS = 24, SHEET_ROWH = 58, SHEET_GAP = 8;
