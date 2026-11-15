@@ -335,7 +335,7 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   btn.disabled = true;
   progressStart(logEl, 'Готовлю профиль и отправляю модели…');
   try {
-    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc }, text => {
+    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc, layout: $('#dg-ai-layout').value || undefined }, text => {
       progressPhase('Модель работает…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;
     });
@@ -1129,7 +1129,8 @@ $('#dg-btn-gen-share').addEventListener('click', async () => {
     const r = await apiStream('/api/generate-spec', {
       profile: state.safeProfile,
       description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
-      excelLib
+      excelLib,
+      layout: $('#dg-ai-layout').value || undefined
     }, text => {
       progressPhase('Модель формирует spec (реальные данные)…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;

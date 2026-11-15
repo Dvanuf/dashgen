@@ -530,6 +530,7 @@ async function streamGenerate(req, res, url) {
       aiCfg,
       excelLib,
       multi,
+      layout: body.layout ? String(body.layout) : null,
       log: l => emit({ type: 'log', text: String(l) })
     });
     if (multi) for (const m of multi) privacy.journal(m.safeProfile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');

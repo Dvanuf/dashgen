@@ -9,9 +9,21 @@ const { validateSpec, normalizeSpecTypes } = require('../spec-validator');
 // Схема v1 прикладывается к запросу: модель видит точные допустимые поля
 // (лишние свойства в sheets/objects — главная причина бракованных попыток).
 const SCHEMA = require('../../spec/schema.v1.json');
+const layouts = require('../builder/layouts');
+
+// Блок промпта для режима макета: позиции и типы диктует макет, модель
+// возвращает наполнение слотов (design.fill), а не sheets.
+const layoutInstructions = layout => [
+  '- РЕЖИМ МАКЕТА: НЕ создавай sheets. Верни design: {"layout":"' + layout.id + '","fill":{ "<id слота>": {…} }}.',
+  '- Слоты макета (заполни ВСЕ до единого), роли и позиции:',
+  JSON.stringify(layout.slots.map(s => ({ id: s.id, zone: s.zone, type: s.type, role: s.role, roleTitle: s.roleTitle })), null, 1),
+  '- Наполнение слота по роли: filter → {"field":"<колонка профиля>"}; kpi и gauge → {"measure":"<id меры>"}; trend/structure/breakdown/top → {"dimension":"<id измерения>","measures":["<id меры>"]} (для trend можно 2 меры); detailTable → {"dimensions":["<id>"],"measures":["<id>"]} (1–3 измерения, 2–4 меры).',
+  '- Можно добавить "title" в любой слот — иначе заголовок соберётся из названий мер/измерений.',
+  '- Кардинальность профиля: для structure pie — текст с distinct ≤ 6; для trend — колонка-дата или период; для top/breakdown — текст с distinct 7–40; KPI — главные числовые колонки.'
+];
 
 // Системный промпт зависит от режима: синтетика inline или реальный Excel с шары.
-const buildSystem = (excelLib, isMulti) => [
+const buildSystem = (excelLib, isMulti, layout) => [
   'Ты проектируешь дашборды Qlik Sense. Тебе дают безопасный профиль данных (имена колонок, типы, кардинальность — БЕЗ значений) и описание отчёта.',
   'Верни ТОЛЬКО spec.json по JSON-схеме Dashgen v1 (схема приложена ниже), без пояснений.',
   'Жёсткие требования к структуре (additionalProperties: false — ЛИШНИЕ ПОЛЯ ЗАПРЕЩЕНЫ):',
@@ -32,11 +44,13 @@ const buildSystem = (excelLib, isMulti) => [
       ],
   '- measures: id латиницей, title по-русски, formula — выражение Qlik (Sum(...), Count(DISTINCT ...), деление для средних). Учитывай типы колонок из профиля: меры — по числовым, измерения — по текстовым и датам.',
   '- dimensions: id латиницей, title по-русски, field — точное имя колонки из профиля.',
-  '- ДИЗАЙН МАКЕТА — архетип «Обзор», проектируй как дизайнер отчётов, ориентируясь на профиль (типы колонок и distinct = кардинальность):',
-  '- Слоты архетипа «Обзор»: 3-4 kpi — главные суммы (row 0, rowspan 3, col 4..19); динамика по колонке-дате — linechart/combochart (row 3, col 4..12); категорийная диаграмма справа (row 3, col 14..22); table — детализация (row 7, colspan 16-20, rowspan 5); listbox-фильтры слева (col 0, w 2, rowspan 3-4) по 2-3 ключевым текстовым полям.',
-  '- Выбор типа по кардинальности из профиля: колонка-дата → linechart (динамика); текст с distinct ≤6 → piechart (доли); текст с distinct 7-40 → barchart (топ сравнения) или treemap (много); две числовые меры разных смыслов → combochart; числовые пары для связи → scatterplot (2-3 меры).',
-  '- Пример кардинальности: «Показатель» с distinct 33 → treemap/barchart, «Отв» с distinct 4 → piechart, «Период» с distinct 738 (дата) → linechart по месяцам.',
-  '- Не ставь piechart по полю с высокой кардинальностью — модель значений не читается. KPI — только по самым важным числовым колонкам (обычно суммы или количества).',
+  ...(layout ? layoutInstructions(layout) : [
+    '- ДИЗАЙН МАКЕТА — архетип «Обзор», проектируй как дизайнер отчётов, ориентируясь на профиль (типы колонок и distinct = кардинальность):',
+    '- Слоты архетипа «Обзор»: 3-4 kpi — главные суммы (row 0, rowspan 3, col 4..19); динамика по колонке-дате — linechart/combochart (row 3, col 4..12); категорийная диаграмма справа (row 3, col 14..22); table — детализация (row 7, colspan 16-20, rowspan 5); listbox-фильтры слева (col 0, w 2, rowspan 3-4) по 2-3 ключевым текстовым полям.',
+    '- Выбор типа по кардинальности из профиля: колонка-дата → linechart (динамика); текст с distinct ≤6 → piechart (доли); текст с distinct 7-40 → barchart (топ сравнения) или treemap (много); две числовые меры разных смыслов → combochart; числовые пары для связи → scatterplot (2-3 меры).',
+    '- Пример кардинальности: «Показатель» с distinct 33 → treemap/barchart, «Отв» с distinct 4 → piechart, «Период» с distinct 738 (дата) → linechart по месяцам.',
+    '- Не ставь piechart по полю с высокой кардинальностью — модель значений не читается. KPI — только по самым важным числовым колонкам (обычно суммы или количества).'
+  ]),
   '- Каждый объект ссылается ТОЛЬКО на существующие id мер/измерений.',
   '- Не выдумывай поля, которых нет в профиле. Формулы используй только по существующим колонкам.'
 ].filter(Boolean).join('\n');
@@ -89,14 +103,21 @@ function repairPrompt(spec, errors) {
   ].join('\n');
 }
 
-// generateSpec({safeProfile, description, aiCfg, excelLib, log}) → {spec, attempts}
-async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, log = () => {} }) {
+// generateSpec({safeProfile, description, aiCfg, excelLib, multi, layout, log}) → {spec, attempts}
+// layout — id макета из каталога (design.layout): модель наполняет слоты, не строит sheets
+async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, layout, log = () => {} }) {
   const maxAttempts = 3;
+  let layoutDef = null;
+  if (layout) {
+    layoutDef = layouts.getLayout(layout);
+    if (!layoutDef) throw new Error('неизвестный макет «' + layout + '» — доступны: ' + layouts.listLayouts().map(l => l.id).join(', '));
+    log('Режим макета: «' + layoutDef.title + '» — модель наполняет слоты, позиции задаёт макет');
+  }
   let spec = null;
   let prompt = buildPrompt(safeProfile, description, excelLib, multi);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log('Попытка ' + attempt + ' из ' + maxAttempts + ': запрос к модели…');
-    const text = await chat(aiCfg, buildSystem(excelLib, !!multi), prompt);
+    const text = await chat(aiCfg, buildSystem(excelLib, !!multi, layoutDef), prompt);
     try {
       spec = normalizeSpecTypes(extractJson(text));
     } catch (e) {
@@ -105,6 +126,11 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, 
       continue;
     }
     const v = validateSpec(spec);
+    if (v.ok && layoutDef && (!spec.design || spec.design.layout !== layoutDef.id)) {
+      log('Попытка ' + attempt + ': модель вернула другой макет — возвращаю на исправление');
+      prompt = repairPrompt(spec, ['design.layout должен быть "' + layoutDef.id + '" (заполните design.fill для всех слотов этого макета)']);
+      continue;
+    }
     if (v.ok) {
       // Режим реального Excel обязателен: если модель всё же вернула inline — бракуем с объяснением
       if (excelLib && (!spec.source || spec.source.type !== 'excel')) {
@@ -121,4 +147,4 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, 
   throw new Error('Модель не выдала валидный spec за ' + maxAttempts + ' попытки — правьте spec.json вручную или уточните описание');
 }
 
-module.exports = { generateSpec, SYSTEM, buildPrompt };
+module.exports = { generateSpec, SYSTEM, buildPrompt, buildSystem };
