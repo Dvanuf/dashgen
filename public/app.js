@@ -831,47 +831,8 @@ function markLayoutEdited() {
   updateApprovalBadge();
 }
 
-$('#dg-btn-save-layout').addEventListener('click', () => {
-  layoutEdited = false;
-  state.specChecked = true;
-  refreshGuides();
-  updateApprovalBadge();
-  $('#dg-layout-note').textContent = 'Раскладка записана в spec (в памяти). Пересоберите черновик — и утвердите заново при публикации.';
-});
-
-// ── правка макета словами (SSE, живой прогресс) ──
-$('#dg-btn-patch').addEventListener('click', async () => {
-  const btn = $('#dg-btn-patch'), logEl = $('#dg-patch-log');
-  const instruction = $('#dg-patch-in').value.trim();
-  if (!instruction) return;
-  if (!state.spec) { logEl.classList.remove('dg-hidden'); logEl.classList.add('is-err'); logEl.textContent = 'Сначала откройте или сгенерируйте spec на шаге «Спецификация».'; return; }
-  btn.disabled = true;
-  progressStart(logEl, 'Отправляю spec и правку в модель…');
-  try {
-    const r = await apiStream('/api/patch-spec', { spec: state.spec, instruction }, text => {
-      progressPhase('Модель формирует правку…');
-      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
-    });
-    progressStop(true);
-    state.spec = r.spec;
-    state.specName = null;
-    state.specHash = null;
-    state.specChecked = true;
-    state.built = false;
-    state.published = false;
-    $('#dg-spec-view').textContent = JSON.stringify(r.spec, null, 2);
-    $('#dg-top-spec').textContent = r.spec.appName + ' (изменён)';
-    $('#dg-build-spec-name').textContent = r.spec.appName + ' (изменён, не сохранён)';
-    $('#dg-spec-hash').textContent = '—'; $('#dg-publish-hash').textContent = '—';
-    renderEditor(r.spec);
-    logEl.textContent += '\nМакет обновлён. Пересоберите черновик на вкладке «Сборка и проверка».';
-    setStatus('dg-st-spec', '✓');
-  } catch (e) {
-    progressStop(false);
-    logEl.classList.add('is-err');
-    logEl.textContent += '\nОШИБКА: ' + e.message;
-  } finally { btn.disabled = false; refreshGuides(); updateApprovalBadge(); icons(); }
-});
+// Правка отчёта — только в Qlik-клиенте: редактор раскладки и словесный патч убраны
+// (кнопки dg-btn-save-layout / dg-btn-patch больше нет в разметке — слушатели удалены).
 
 // Режим сборки: показать поля attach (цель и «без перезагрузки»)
 $('#dg-build-mode').addEventListener('change', e => {
@@ -1182,21 +1143,6 @@ function shareHistoryRender() {
     if (btn) btn.click();
   };
 }
-
-$('#dg-btn-layout-edit').addEventListener('click', () => {
-  layoutEdited = !layoutEdited;
-  document.getElementById('dg-sheet').classList.toggle('editing', layoutEdited);
-  $('#dg-btn-layout-edit').classList.toggle('is-on', layoutEdited);
-  $('#dg-btn-layout-edit').innerHTML = layoutEdited
-    ? '<i data-lucide="check" aria-hidden="true"></i>Готово'
-    : '<i data-lucide="move" aria-hidden="true"></i>Правка раскладки';
-  $('#dg-btn-save-layout').classList.toggle('dg-hidden', !layoutEdited);
-  $('#dg-layout-edit-hint').textContent = layoutEdited
-    ? 'Тяните плитки за заголовок, размер — за зелёный угол.'
-    : 'Включите правку — плитки станут перетаскиваемыми.';
-  if (state.spec) renderEditor(state.spec);
-  icons();
-});
 
 $('#dg-btn-profile-share').addEventListener('click', () => {
   if (!share.selected) return;
