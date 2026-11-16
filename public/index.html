@@ -96,7 +96,10 @@
         </div>
         <div id="dg-profile-out"></div>
         
-      </section>
+      
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="profile" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Профиль данных</button>
+</section>
 
       <!-- Приватность -->
       <section class="dg-panel" id="dg-p-privacy" hidden>
@@ -141,12 +144,17 @@
                 <option value="overview" selected>Обзор — зоны: фильтры, KPI, графики, детализация</option>
                 <option value="detail">Детализация — зоны: фильтры, KPI ×4, графики, таблица и топ</option>
                 <option value="compact">Компакт — зоны: фильтры, KPI ×3, графики, таблица</option>
+                <option value="free">Свободная — макет придумает сам ИИ</option>
               </select>
               <span class="dg-note">Платформа:</span>
               <select class="dg-input" id="dg-ai-endpoint" style="flex:none;width:auto;"></select>
               <span class="dg-note">Модель:</span>
-              <input class="dg-input" id="dg-ai-model-in" type="text" value="glm-4.6" style="flex:none;width:110px;">
+              <select class="dg-input" id="dg-ai-model-sel" style="flex:none;width:auto;"></select>
+              <button class="dg-btn" id="dg-btn-ai-test" type="button" title="Проверить связь с ИИ выбранной моделью; при отказе переберёт другие модели пакета"><i data-lucide="wifi" aria-hidden="true"></i>Проверить связь</button>
               <span class="dg-note" id="dg-endpoint-saved"></span>
+            </div>
+            <div class="dg-rowbtn dg-hidden" id="dg-ai-test-out-row" style="margin-top:6px;">
+              <span class="dg-note" id="dg-ai-test-out"></span>
             </div>
             <div class="dg-rowbtn" id="dg-key-row" style="background:var(--dg-warnsoft);border-radius:8px;padding:8px 10px;">
               <i data-lucide="key-round" aria-hidden="true" style="width:14px;height:14px;color:var(--dg-warn);"></i>
@@ -309,6 +317,18 @@
             </ul>
           </div>
         </div>
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="spec" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Спецификация</button>
+        </div>
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="layout" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Правка отчёта</button>
+        </div>
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="build" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Сборка и проверка</button>
+        </div>
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="publish" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Публикация</button>
+        </div>
       </section>
 
     </main>
@@ -321,3 +341,6 @@
 <script src="app.js?v=032"></script>
 </body>
 </html>
+        <div class="dg-rowbtn" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+          <button class="dg-btn dg-btn--p" data-go="spec" type="button"><i data-lucide="arrow-right" aria-hidden="true"></i>Дальше: Спецификация</button>
+

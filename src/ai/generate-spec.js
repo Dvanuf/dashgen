@@ -105,19 +105,22 @@ function repairPrompt(spec, errors) {
 
 // generateSpec({safeProfile, description, aiCfg, excelLib, multi, layout, log}) → {spec, attempts}
 // layout — id макета из каталога (design.layout): модель наполняет слоты, не строит sheets
-async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, layout, log = () => {} }) {
+async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, layout, modelOverride, log = () => {} }) {
   const maxAttempts = 3;
+  const freeForm = layout === 'free';
   let layoutDef = null;
-  if (layout) {
+  if (layout && layout !== 'free') {
     layoutDef = layouts.getLayout(layout);
-    if (!layoutDef) throw new Error('неизвестный макет «' + layout + '» — доступны: ' + layouts.listLayouts().map(l => l.id).join(', '));
+    if (!layoutDef) throw new Error('неизвестный макет «' + layout + '» — доступны: ' + layouts.listLayouts().map(l => l.id).join(', ') + ', free');
     log('Режим макета: «' + layoutDef.title + '» — модель наполняет слоты, позиции задаёт макет');
+  } else if (freeForm) {
+    log('Свободная форма: макет и раскладку модель спроектирует сама');
   }
   let spec = null;
   let prompt = buildPrompt(safeProfile, description, excelLib, multi);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log('Попытка ' + attempt + ' из ' + maxAttempts + ': запрос к модели…');
-    const text = await chat(aiCfg, buildSystem(excelLib, !!multi, layoutDef), prompt);
+    const text = await chat(modelOverride ? { ...aiCfg, model: modelOverride } : aiCfg, buildSystem(excelLib, !!multi, layoutDef), prompt);
     try {
       spec = normalizeSpecTypes(extractJson(text));
     } catch (e) {
@@ -139,6 +142,9 @@ async function generateSpec({ safeProfile, description, aiCfg, excelLib, multi, 
       log('Попытка ' + attempt + ': модель вернула другой макет — возвращаю на исправление');
       prompt = repairPrompt(spec, ['design.layout должен быть "' + layoutDef.id + '" (заполните design.fill для всех слотов этого макета)']);
       continue;
+    }
+    if (v.ok && freeForm && spec.design) {
+      delete spec.design.layout; delete spec.design.fill; // свободная форма: sheets от модели как раньше
     }
     if (v.ok) {
       // Режим реального Excel обязателен (кроме режима макета — источник подставлен выше)

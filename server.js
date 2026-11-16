@@ -464,7 +464,7 @@ const api = {
       spec,
       history: Array.isArray(body.history) ? body.history : [],
       instruction: String(body.message),
-      aiCfg,
+      aiCfg: body.model ? { ...aiCfg, model: String(body.model) } : aiCfg,
       log
     });
     if (specName && fp) fs.writeFileSync(fp, JSON.stringify(r.spec, null, 2));
@@ -474,11 +474,84 @@ const api = {
   // ── платформа/модель ИИ ──
   'GET /api/ai-presets': () => {
     const presets = [
-      { id: 'zai-open', label: 'Z.ai Open Platform', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.3' },
-      { id: 'zai-coding', label: 'Z.ai Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', defaultModel: 'glm-5.3' },
-      { id: 'bigmodel', label: 'BigModel (Китай)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-5.3' }
+      { id: 'zai-open', label: 'Z.ai Open Platform (Стандарт)', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.3',
+        models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.3-flashx', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6', 'glm-4.5-air', 'glm-4.5'] },
+      { id: 'zai-coding', label: 'Z.ai Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', defaultModel: 'glm-4.6',
+        models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6', 'glm-4.5-air'] },
+      { id: 'bigmodel', label: 'BigModel (Китай)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-5.3',
+        models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6'] }
     ];
     return [200, { presets, current: CFG && CFG.ai ? { baseUrl: CFG.ai.baseUrl, model: CFG.ai.model } : null }];
+  },
+
+  // Живой список моделей выбранной платформы (GET <baseUrl>/models ключом на сервере)
+  'GET /api/ai-models': async req => {
+    const url = new URL('http://x' + req.url);
+    const baseUrl = (url.searchParams.get('baseUrl') || '').replace(/\/$/, '');
+    if (!baseUrl) return [400, { error: 'Укажите baseUrl' }];
+    const key = (() => { try { return require('./src/ai/provider').readApiKey(); } catch (_) { return null; } })();
+    if (!key) return [400, { error: 'Ключ ИИ не задан (~/.dashgen/zai_api_key)' }];
+    try {
+      const res = await fetch(baseUrl + '/models', { headers: { 'Authorization': 'Bearer ' + key } });
+      const d = await res.json();
+      const ids = (d.data || []).map(m => m.id);
+      // новые — первыми (по created убыв.)
+      ids.sort((a, b) => {
+        const ca = (d.data.find(m => m.id === a) || {}).created || 0;
+        const cb = (d.data.find(m => m.id === b) || {}).created || 0;
+        return cb - ca;
+      });
+      return [200, { models: ids }];
+    } catch (e) {
+      return [200, { models: [], error: e.message.slice(0, 150) }];
+    }
+  },
+
+  // Проверка связи с ИИ: короткий пинг выбранной моделью; при отказе перебираем остальные модели пакета
+  'POST /api/ai-test': async req => {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const aiCfg = CFG && CFG.ai;
+    if (!aiCfg) return [500, { error: 'config.json не найден' }];
+    const baseUrl = String(body.baseUrl || aiCfg.baseUrl).replace(/\/$/, '');
+    const { chat } = require('./src/ai/provider');
+    const tryModel = async model => {
+      const t0 = Date.now();
+      try {
+        await chat({ ...aiCfg, baseUrl, model }, 'Ты — эхо-тест.', 'Ответь одним словом: ок');
+        return { ok: true, ms: Date.now() - t0 };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e).slice(0, 220) };
+      }
+    };
+    let sel = String(body.model || aiCfg.model || 'glm-4.6');
+    let r = await tryModel(sel);
+    const tried = [{ model: sel, ...r }];
+    if (!r.ok && body.tryOthers !== false) {
+      const presets = [
+        { baseUrl: 'https://api.z.ai/api/coding/paas/v4', models: ['glm-4.6', 'glm-4.7', 'glm-5', 'glm-5.1', 'glm-5.2', 'glm-5.3'] },
+        { baseUrl: 'https://api.z.ai/api/paas/v4', models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6'] },
+        { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-5.3', 'glm-4.6'] }
+      ];
+      const order = [];
+      for (const p of presets) for (const m of p.models) if (!(p.baseUrl === baseUrl && m === sel)) order.push({ baseUrl: p.baseUrl, model: m });
+      for (const cand of order) {
+        if (tried.length >= 8) break;
+        r = await tryModel(cand.model);
+        tried.push({ model: cand.model + ' @ ' + cand.baseUrl.replace('https://', ''), ...r });
+        if (r.ok) { sel = cand.model; break; }
+      }
+    }
+    const worked = tried.find(t => t.ok) || null;
+    return [200, {
+      ok: !!worked,
+      model: worked ? worked.model : sel,
+      baseUrl: worked ? undefined : baseUrl,
+      ms: worked ? worked.ms : null,
+      tried,
+      hint: worked
+        ? 'Рабочая комбинация найдена и подставлена: ' + worked.model + (worked.baseUrl ? ' (платформа: ' + worked.baseUrl + ')' : '')
+        : 'Ни одна модель не ответила: проверьте ключ (~/.dashgen/zai_api_key), подписку/баланс Z.ai и сеть.'
+    }];
   },
 
   'POST /api/set-ai-endpoint': async req => {
@@ -618,7 +691,8 @@ async function streamGenerate(req, res, url) {
       aiCfg,
       excelLib,
       multi,
-      layout: body.layout ? String(body.layout) : null,
+      layout: body.layout === 'free' ? 'free' : (body.layout ? String(body.layout) : null),
+      modelOverride: body.model ? String(body.model) : null,
       log: l => emit({ type: 'log', text: String(l) })
     });
     if (multi) for (const m of multi) privacy.journal(m.safeProfile, aiCfg.baseUrl + ' (' + aiCfg.model + ')');

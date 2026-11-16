@@ -48,6 +48,9 @@ async function chat(aiCfg, system, prompt) {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
+        if (res.status === 429 && (body.includes('1113') || body.toLowerCase().includes('insufficient'))) {
+          throw new Error('Пакет/баланс Z.ai не покрывает модель ' + cfg.model + ' на этой платформе (HTTP 429, код 1113). Возьмите другую модель из списка или проверьте подписку — кнопка «Проверить связь» переберёт модели сама.');
+        }
         // 401/403/402 — проблема ключа/баланса, ретраить бессмысленно
         if ([401, 402, 403].includes(res.status)) {
           throw new Error('ИИ-провайдер HTTP ' + res.status + ': ' + body.slice(0, 300));
@@ -81,4 +84,4 @@ function extractJson(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-module.exports = { chat, extractJson, DEFAULTS };
+module.exports = { chat, extractJson, DEFAULTS, readApiKey };

@@ -80,10 +80,18 @@ function progressStop(ok) {
 
 // ── навигация и статусы ──
 const navBtns = document.querySelectorAll('.dg-navbtn');
-navBtns.forEach(btn => btn.addEventListener('click', () => {
-  navBtns.forEach(b => b.classList.toggle('is-on', b === btn));
-  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-' + btn.dataset.step; });
-}));
+navBtns.forEach(btn => btn.addEventListener('click', () => goStep(btn.dataset.step)));
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-go]');
+  if (b) goStep(b.dataset.go);
+});
+function goStep(step) {
+  navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === step));
+  document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-' + step; });
+  window.scrollTo({ top: 0 });
+  if (step === 'source' && share.status && share.status.mounted) shareList(share.rel).catch(() => {});
+  try { lucide.createIcons(); } catch (_) {}
+}
 
 function pipeDone(names) {
   document.querySelectorAll('.dg-pipestep').forEach(el => el.classList.toggle('is-done', names.includes(el.dataset.pipe)));
@@ -307,14 +315,15 @@ async function loadAiPresets() {
     sel.insertAdjacentHTML('beforeend', '<option value="' + esc(cur) + '">Свой URL</option>');
   }
   if (cur) sel.value = cur;
-  if (r.current && r.current.model) $('#dg-ai-model-in').value = r.current.model;
+  if (r.current && r.current.model) window.__curModel = r.current.model;
+  fillModelSelect(r.presets || [], $('#dg-ai-endpoint').value, window.__curModel);
 }
 
 async function saveAiEndpoint() {
   try {
     await api('/api/set-ai-endpoint', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseUrl: $('#dg-ai-endpoint').value, model: $('#dg-ai-model-in').value.trim() })
+      body: JSON.stringify({ baseUrl: $('#dg-ai-endpoint').value, model: $('#dg-ai-model-sel').value })
     });
     $('#dg-endpoint-saved').textContent = 'сохранено ✓';
     setTimeout(() => { $('#dg-endpoint-saved').textContent = ''; }, 2500);
@@ -323,16 +332,24 @@ async function saveAiEndpoint() {
   }
 }
 
+function fillModelSelect(presets, baseUrl, cur) {
+  const sel = $('#dg-ai-model-sel');
+  const preset = (presets || []).find(p => p.baseUrl === baseUrl);
+  const list = (preset && preset.models) || ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6'];
+  const model = cur || (preset && preset.defaultModel) || list[0];
+  sel.innerHTML = list.map(m => `<option value="${m}"${m === model ? ' selected' : ''}>${m}</option>`).join('');
+}
+
 $('#dg-ai-endpoint').addEventListener('change', async () => {
   // Последняя модель выбранной платформы подставляется автоматически (можно поправить вручную)
   try {
     const r = await api('/api/ai-presets');
     const preset = (r.presets || []).find(p => p.baseUrl === $('#dg-ai-endpoint').value);
-    if (preset && preset.defaultModel) $('#dg-ai-model-in').value = preset.defaultModel;
+    fillModelSelect(r.presets || [], $('#dg-ai-endpoint').value, null);
   } catch (_) { /* оставляем текущую модель */ }
   await saveAiEndpoint();
 });
-$('#dg-ai-model-in').addEventListener('change', saveAiEndpoint);
+$('#dg-ai-model-sel').addEventListener('change', saveAiEndpoint);
 
 // ── проект ИИ: генерация spec (SSE, живой прогресс) ──
 $('#dg-btn-ai-gen').addEventListener('click', async () => {
@@ -343,7 +360,7 @@ $('#dg-btn-ai-gen').addEventListener('click', async () => {
   btn.disabled = true;
   progressStart(logEl, 'Готовлю профиль и отправляю модели…');
   try {
-    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc, layout: $('#dg-ai-layout').value || undefined }, text => {
+    const r = await apiStream('/api/generate-spec', { profile: state.safeProfile, description: desc, layout: $('#dg-ai-layout').value || undefined, model: $('#dg-ai-model-sel').value }, text => {
       progressPhase('Модель работает…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;
     });
@@ -403,6 +420,28 @@ $('#dg-btn-dialog').addEventListener('click', async () => {
 });
 
 // ── фиксация правок из Qlik-клиента: состояние листов → spec (fixed:true) ──
+$('#dg-btn-ai-test').addEventListener('click', async () => {
+  const out = $('#dg-ai-test-out'), row = $('#dg-ai-test-out-row');
+  row.classList.remove('dg-hidden');
+  out.textContent = 'Проверяю связь (переберу модели пакета, если выбранная не ответит)…';
+  out.style.color = '';
+  try {
+    const r = await api('/api/ai-test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: $('#dg-ai-endpoint').value, model: $('#dg-ai-model-sel').value })
+    });
+    if (r.ok) {
+      out.textContent = '✓ Связь есть: ' + r.model + ' (' + r.ms + ' мс). ' + r.hint;
+      out.style.color = '#1B8A00';
+      if (r.model) $('#dg-ai-model-sel').value = r.model;
+      await saveAiEndpoint();
+    } else {
+      out.textContent = '✗ Связи нет. ' + r.hint + ' Перебор: ' + r.tried.map(t => t.model.split('@')[0] + (t.ok ? '✓' : '✗')).join(', ');
+      out.style.color = '#C8102E';
+    }
+  } catch (e) { out.textContent = '✗ ' + e.message; out.style.color = '#C8102E'; }
+});
+
 $('#dg-btn-sync').addEventListener('click', async () => {
   const btn = $('#dg-btn-sync'), logEl = $('#dg-sync-log');
   const app = $('#dg-sync-app').value.trim();
@@ -1034,13 +1073,6 @@ $('#dg-btn-share-mount').addEventListener('click', async () => {
 
 $('#dg-btn-share-refresh').addEventListener('click', () => shareList(share.rel));
 
-// список шары обновляется при каждом открытии вкладки «Источник»
-navBtns.forEach(btn => btn.addEventListener('click', () => {
-  if (btn.dataset.step === 'source' && share.status && share.status.mounted) {
-    shareList(share.rel).catch(() => {});
-  }
-}));
-
 async function shareList(sub) {
   const r = await api('/api/share-files?sub=' + encodeURIComponent(sub));
   share.rel = r.sub || '';
@@ -1165,7 +1197,8 @@ $('#dg-btn-gen-share').addEventListener('click', async () => {
       profile: state.safeProfile,
       description: $('#dg-ai-desc').value.trim() || 'Дашборд по профилю файла: KPI, динамика, детализация.',
       excelLib,
-      layout: $('#dg-ai-layout').value || undefined
+      layout: $('#dg-ai-layout').value || undefined,
+      model: $('#dg-ai-model-sel').value
     }, text => {
       progressPhase('Модель формирует spec (реальные данные)…');
       logEl.textContent += (logEl.textContent ? '\n' : '') + text;
