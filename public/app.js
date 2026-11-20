@@ -86,6 +86,7 @@ document.addEventListener('click', e => {
   if (b) goStep(b.dataset.go);
 });
 function goStep(step) {
+  if (!document.getElementById('dg-p-' + step)) step = 'source'; // защита от битых data-go (панели нет — не гасим весь экран)
   navBtns.forEach(b => b.classList.toggle('is-on', b.dataset.step === step));
   document.querySelectorAll('.dg-panel').forEach(p => { p.hidden = p.id !== 'dg-p-' + step; });
   window.scrollTo({ top: 0 });
