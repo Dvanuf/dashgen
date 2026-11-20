@@ -33,7 +33,23 @@ const privacy = require('./src/privacy');
 const qrs = require('./src/qrs');
 
 let CFG = null;
-try { CFG = loadConfig(); } catch (e) { console.warn('Конфиг не загружен: ' + e.message); }
+// config.json перечитывается по mtime: правки на диске подхватываются без рестарта,
+// и set-ai-endpoint больше не «затирает» диск значениями из памяти запуска.
+let cfgMtime = 0;
+const cfgPath = process.env.DASHGEN_CONFIG_DIR
+  ? path.join(process.env.DASHGEN_CONFIG_DIR, 'config.json')
+  : path.join(ROOT, 'config.json');
+function ensureConfig() {
+  try {
+    const m = fs.statSync(cfgPath).mtimeMs;
+    if (m !== cfgMtime) {
+      cfgMtime = m;
+      CFG = loadConfig();
+      if (CFG && CFG.ai) console.log('config.json перечитан: ' + CFG.ai.baseUrl + ' · ' + CFG.ai.model);
+    }
+  } catch (e) { /* файла нет — работаем с последним CFG */ }
+}
+try { ensureConfig(); } catch (e) { console.warn('Конфиг не загружен: ' + e.message); }
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -514,10 +530,10 @@ const api = {
     if (!aiCfg) return [500, { error: 'config.json не найден' }];
     const baseUrl = String(body.baseUrl || aiCfg.baseUrl).replace(/\/$/, '');
     const { chat } = require('./src/ai/provider');
-    const tryModel = async model => {
+    const tryModel = async (model, url = baseUrl) => {
       const t0 = Date.now();
       try {
-        await chat({ ...aiCfg, baseUrl, model }, 'Ты — эхо-тест.', 'Ответь одним словом: ок');
+        await chat({ ...aiCfg, baseUrl: url, model }, 'Ты — эхо-тест.', 'Ответь одним словом: ок');
         return { ok: true, ms: Date.now() - t0 };
       } catch (e) {
         return { ok: false, error: String(e.message || e).slice(0, 220) };
@@ -536,8 +552,8 @@ const api = {
       for (const p of presets) for (const m of p.models) if (!(p.baseUrl === baseUrl && m === sel)) order.push({ baseUrl: p.baseUrl, model: m });
       for (const cand of order) {
         if (tried.length >= 8) break;
-        r = await tryModel(cand.model);
-        tried.push({ model: cand.model + ' @ ' + cand.baseUrl.replace('https://', ''), ...r });
+        r = await tryModel(cand.model, cand.baseUrl);
+        tried.push({ model: cand.model, baseUrl: cand.baseUrl, ...r });
         if (r.ok) { sel = cand.model; break; }
       }
     }
@@ -545,11 +561,11 @@ const api = {
     return [200, {
       ok: !!worked,
       model: worked ? worked.model : sel,
-      baseUrl: worked ? undefined : baseUrl,
+      baseUrl: worked ? (worked.baseUrl || baseUrl) : baseUrl,
       ms: worked ? worked.ms : null,
       tried,
       hint: worked
-        ? 'Рабочая комбинация найдена и подставлена: ' + worked.model + (worked.baseUrl ? ' (платформа: ' + worked.baseUrl + ')' : '')
+        ? 'Рабочая комбинация найдена и подставлена: ' + worked.model + (worked.baseUrl && worked.baseUrl !== baseUrl ? ' (платформа: ' + worked.baseUrl + ')' : '')
         : 'Ни одна модель не ответила. ' + (tried[0] && /1113/.test(tried[0].error || '')
           ? 'Код 1113: пакет/баланс не покрывает модель. Если подписка точно активна — вероятно, квота текущего окна исчерпана (сбрасывается автоматически, обычно до 5 ч) или ключ создан не в том аккаунте, где оформлен пакет. Сверьте ключ в консоли z.ai с ключом ~/.dashgen/zai_api_key.'
           : 'Проверьте ключ (~/.dashgen/zai_api_key), подписку/баланс Z.ai и сеть. Первая ошибка: ' + (tried[0] && tried[0].error || '?'))
@@ -822,6 +838,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:' + PORT);
   const key = req.method + ' ' + url.pathname;
   try {
+    ensureConfig(); // config.json перечитывается, если изменился на диске
     if (req.method === 'POST' && STREAM_ROUTES[url.pathname]) return await STREAM_ROUTES[url.pathname](req, res, url);
     if (api[key]) return json(res, ...(await api[key](req, res, url)));
     if (req.method === 'GET') return serveStatic(res, url.pathname);

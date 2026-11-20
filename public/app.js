@@ -249,6 +249,7 @@ async function loadSpec(name) {
   setStatus('dg-st-spec', '');
   renderEditor(data.spec);
   refreshGuides();
+  updateApprovalBadge(); // бейдж публикации зависит от spec — обновляем после каждой загрузки
   icons();
 }
 
@@ -434,10 +435,11 @@ $('#dg-btn-ai-test').addEventListener('click', async () => {
     if (r.ok) {
       out.textContent = '✓ Связь есть: ' + r.model + ' (' + r.ms + ' мс). ' + r.hint;
       out.style.color = '#1B8A00';
+      if (r.baseUrl) $('#dg-ai-endpoint').value = r.baseUrl; // перебор мог найти другую платформу
       if (r.model) $('#dg-ai-model-sel').value = r.model;
       await saveAiEndpoint();
     } else {
-      out.textContent = '✗ Связи нет. ' + r.hint + ' Перебор: ' + r.tried.map(t => t.model.split('@')[0] + (t.ok ? '✓' : '✗')).join(', ');
+      out.textContent = '✗ Связи нет. ' + r.hint + ' Перебор: ' + r.tried.map(t => t.model + (t.baseUrl && t.baseUrl !== r.tried[0].baseUrl ? ' *' : '') + (t.ok ? '✓' : '✗')).join(', ');
       out.style.color = '#C8102E';
     }
   } catch (e) { out.textContent = '✗ ' + e.message; out.style.color = '#C8102E'; }
